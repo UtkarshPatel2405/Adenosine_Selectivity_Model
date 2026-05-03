@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local caches / artifacts
+cache/
+models/
+outputs/
+reports/
+data/processed/
+
+# Env
+.venv/
+.env
