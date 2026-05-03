@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+xgboost
+rdkit
+plotly
+matplotlib
+seaborn
+streamlit
+joblib
+py3Dmol
+
+ipython-genutils
