@@ -1,0 +1,28 @@
+{
+  "artifacts": {
+    "A1": "xgb_A1_ens.pkl",
+    "A2A": "xgb_A2A_ens.pkl",
+    "A2B": "xgb_A2B_ens.pkl",
+    "A3": "xgb_A3_ens.pkl",
+    "global": "xgb_global_ens.pkl"
+  },
+  "default_params": {
+    "colsample_bytree": 0.8,
+    "learning_rate": 0.05,
+    "max_depth": 6,
+    "n_estimators": 600,
+    "n_jobs": -1,
+    "random_state": 42,
+    "reg_lambda": 1.0,
+    "subsample": 0.8
+  },
+  "n_bootstrap": 5,
+  "n_train_rows": 5596,
+  "per_subtype_train_size": {
+    "A1": 963,
+    "A2A": 1870,
+    "A2B": 899,
+    "A3": 1864
+  },
+  "trained_at": "2026-04-30T13:39:45.458917Z"
+}
