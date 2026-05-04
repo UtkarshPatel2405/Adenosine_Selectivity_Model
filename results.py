@@ -36,7 +36,7 @@ def run_mode(
     df, lookup = load_and_clean(data_path, mode=mode)
 
     # 2) Split
-    train_df, test_df = scaffold_split(df, test_size=test_size, random_state=random_state)
+    train_df, test_df = scaffold_split(df, test_size=test_size, random_state=random_state, smiles_col="canonical_smiles")
 
     # 3) Features (also writes caches/scaler per your features.py)
     X_train, X_test, _scaler = build_feature_matrix(train_df, test_df, smiles_col="canonical_smiles")
@@ -89,11 +89,11 @@ def run_mode(
             "features_test": "data/processed/features_test.pkl",
             "train_fps": "data/processed/train_fps.pkl",
             "models": [
-                "models/xgb_A1_ens.pkl",
-                "models/xgb_A2A_ens.pkl",
-                "models/xgb_A2B_ens.pkl",
-                "models/xgb_A3_ens.pkl",
-                "models/xgb_global_ens.pkl",
+                "models/xgboost_a1_model.pkl",
+                "models/xgboost_a2a_model.pkl",
+                "models/xgboost_a2b_model.pkl",
+                "models/xgboost_a3_model.pkl",
+                "models/xgboost_model.pkl",
             ],
         },
     }

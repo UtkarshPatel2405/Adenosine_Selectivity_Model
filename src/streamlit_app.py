@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.predictor import predict
+from src.predictor import SUBTYPES, predict
 from src.chem_utils import topk_tanimoto
 from src.app.components.structure_viz import draw_2d
 from src.app.components.pains_checker import check_pains
@@ -32,71 +32,68 @@ def _ad_label(sim: float | None) -> str:
 def _section_single_prediction():
     st.header("Single SMILES Prediction")
 
+    # User Inputs
     smiles = st.text_input("SMILES", value="CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S")
     threshold = st.slider("Hit threshold (pChEMBL)", 4.0, 9.0, 6.0, 0.1)
 
     if st.button("Predict"):
-       
+        # 1. Visualization
         img = draw_2d(smiles)
         if img is not None:
             st.image(img, caption="2D Structure", width=350)
         else:
             st.warning("Could not render 2D structure – is the SMILES valid?")
 
-       
+        # 2. Run Prediction Pipeline
         try:
             r = predict(smiles, threshold=threshold)
         except Exception as e:
             st.error(f"Prediction failed: {e}")
             return
 
-        if r["source"] == "database":
-            st.info("Experimental data from ChEMBL (database hit).")
+        # 3. Data Source Information[cite: 19]
+        if r["in_database"]:
+            st.success("Experimental data retrieved from ChEMBL (Database Hit).")
+            st.caption("Note: Missing experimental values for specific subtypes are assumed as 0.000 per experimental protocol.")
         else:
-            st.info("ML model prediction.")
+            st.info("ML Ensemble model prediction (Novel Molecule).")
+       
+       
+        st.subheader("Physicochemical Profile")
+        d = r["descriptors"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Mol. Weight", d["MW"])
+        c2.metric("LogP", d["LogP"])
+        c3.metric("H-Bond Donors", d["HBD"])
+        c4.metric("H-Bond Acceptors", d["HBA"])
+        
+        c5, c6, c7, _ = st.columns(4)
+        c5.metric("Rotatable Bonds", d["RotBonds"])
+        c6.metric("Aromatic Rings", d["AromRings"])
+        c7.metric("TPSA", d["TPSA"])
 
-        st.write(f"**Best target:** {r['best_target']}")
-
-        sel = r.get("selectivity_score")
-        if sel is None:
-            st.write("Selectivity score: N/A (only one subtype has experimental data).")
-        else:
-            sel = float(sel)
-            st.write(f"Selectivity score: {sel:.3f}")
-            if sel < 0.3:
-                st.warning("Selectivity: low (likely non-selective across subtypes).")
-            elif sel < 1.0:
-                st.info("Selectivity: moderate.")
-            else:
-                st.success("Selectivity: high.")
-
-        preds = r["predictions"]
-        unc = r["uncertainty"]
-        rows = [
-            {
-                "Subtype": k,
-                "pChEMBL": None if preds.get(k) is None else round(float(preds[k]), 3),
-                "Uncertainty (std)": None if unc.get(k) is None else round(float(unc[k]), 3),
-                "Hit": preds.get(k) is not None and preds[k] > threshold,
-            }
-            for k in ["A1", "A2A", "A2B", "A3"]
-        ]
+        st.subheader("Subtype Bioactivity Profile")
+        st.write(f"**Primary Target Receptor:** {r['best_target']}")
+        preds, unc = r["predictions"], r["uncertainty"]
+        
+        rows = [{
+            "Subtype": k,
+            "pChEMBL": round(float(preds[k]), 3),
+            "Uncertainty (std)": round(float(unc[k]), 3),
+            "Hit": k in r["target_hits"]
+        } for k in SUBTYPES]
         st.table(rows)
 
-        hits = r.get("target_hits", [])
-        if hits:
-            st.write("Targets above threshold:", ", ".join(hits))
+        if r["target_hits"]:
+            st.write("**Targets above threshold:**", ", ".join(r["target_hits"]))
         else:
-            st.write("No targets above threshold.")
+            st.write("**No targets met the current pChEMBL threshold.**")
 
-
+        # 6. Reliability / Applicability Domain[cite: 21]
         st.subheader("Reliability / Applicability Domain")
         sim = nearest_tanimoto(smiles)
         if sim is None:
-            st.warning(
-                "AD cache missing.  Run the feature pipeline to generate "
-                "data/processed/train_fps.pkl."
-            )
+            st.warning("AD cache missing. Run the feature pipeline to generate data/processed/train_fps.pkl.")
         else:
             label = _ad_label(sim)
             st.metric("Nearest Tanimoto (train)", f"{sim:.3f}")
@@ -107,80 +104,83 @@ def _section_single_prediction():
             else:
                 st.error(f"Reliability: {label} (< 0.4 – out-of-domain; use with caution).")
 
+        # 7. Safety & Drug-Likeness Profiles[cite: 21]
+        st.subheader("Safety & Drug-Likeness")
+        col_pains, col_qed = st.columns(2)
+        
+        with col_pains:
+            alerts = check_pains(smiles)
+            if alerts:
+                st.error(f"PAINS alert(s) detected: {', '.join(alerts)}")
+            else:
+                st.success("No PAINS structural alerts detected.")
 
-        st.subheader("PAINS Alerts")
-        alerts = check_pains(smiles)
-        if alerts:
-            st.error(f"PAINS alert(s) detected: {', '.join(alerts)}")
-        else:
-            st.success("No PAINS alerts detected.")
+        with col_qed:
+            profile = qed_profile(smiles)
+            if profile:
+                st.metric("QED Score", f"{profile.get('QED', 0.0):.3f}")
+            else:
+                st.warning("Could not compute drug-likeness.")
 
-    
-        st.subheader("Drug-Likeness Profile")
-        profile = qed_profile(smiles)
-        if profile is None:
-            st.warning("Could not compute drug-likeness (invalid SMILES).")
-        else:
-            cols = st.columns(4)
-            for i, (key, val) in enumerate(profile.items()):
-                cols[i % 4].metric(key, val)
-
-       
+        # Top-5 Similar Training Molecules - Only if NOT in database
         st.subheader("Top-5 Similar Training Molecules (Tanimoto, Morgan r=2)")
+        
+           
         try:
-            canon, top_sims = topk_tanimoto(smiles, k=5)
-            if canon is None:
-                st.write("No similarity results (invalid SMILES).")
+                    # Get the canonical smiles and top similarities
+            canon_smi, top_sims = topk_tanimoto(smiles, k=5)
+                    
+            if canon_smi is None:
+                        st.write("No similarity results (invalid SMILES).")
             elif not top_sims:
                 st.error(
-                    "Similarity cache missing.  Run the feature pipeline once to generate "
+                    "Similarity cache missing. Run the feature pipeline once to generate "
                     "data/processed/train_fps.pkl and data/processed/train_smiles.pkl."
-                )
+                        )
             else:
-                st.caption(f"Canonical SMILES used: {canon}")
-                st.table([{"Train SMILES": s, "Tanimoto": round(sim, 4)} for s, sim in top_sims])
-        except FileNotFoundError:
-            st.error(
-                "Similarity cache missing.  Run the feature pipeline once to generate "
-                "data/processed/train_fps.pkl and data/processed/train_smiles.pkl."
-            )
-
+                        # THIS LINE uses the canon_smi variable so it won't be dull!
+                st.markdown(f"**Canonical SMILES Query:** `{canon_smi}`")
+                        
+                        # Display the table
+                sim_rows = [{"Train SMILES": s, "Tanimoto": round(sim, 4)} for s, sim in top_sims]
+                st.table(sim_rows)
+        except Exception as e:
+            st.error(f"Similarity search failed: {e}")
+        
 
 def _section_batch_prediction():
     st.header("Batch CSV Prediction")
 
-    uploaded = st.file_uploader("Upload a CSV with a SMILES column", type="csv")
+    uploaded = st.file_uploader("Upload a CSV", type="csv")
     if uploaded is None:
-        st.info(
-            "Upload a CSV to get started.  The file should contain a column named "
-            "`smiles`, `SMILES`, or similar."
-        )
+        st.info("Upload a CSV with a SMILES column to begin.")
         return
 
     df = pd.read_csv(uploaded)
+    # Using the helper from the component to stay consistent
+    from src.app.components.batch_predict import _infer_smiles_col 
     smiles_col = _infer_smiles_col(df)
-    st.write(f"Detected SMILES column: **{smiles_col}** | Rows: {len(df)}")
+    st.write(f"Detected SMILES column: **{smiles_col}** | Total Rows: {len(df)}")
 
-    threshold = st.slider(
-        "Hit threshold (pChEMBL) – batch", 4.0, 9.0, 6.0, 0.1, key="batch_thr"
-    )
+    threshold = st.slider("pChEMBL Hit Threshold", 4.0, 9.0, 6.0, 0.1)
 
     if st.button("Run Batch Prediction"):
-        with st.spinner("Running predictions…"):
+        with st.spinner("Processing..."):
             result_df = predict_batch(df, threshold=threshold, smiles_col=smiles_col)
 
-        errors = result_df["error"].notna().sum()
-        st.success(f"Done. {len(result_df)} rows processed; {errors} error(s).")
-        st.dataframe(result_df, use_container_width=True)
+        # Check for errors column securely[cite: 18]
+        if "error" in result_df.columns:
+            err_count = result_df["error"].notna().sum()
+            if err_count > 0:
+                st.warning(f"Processed {len(result_df)} rows; {err_count} invalid SMILES skipped.")
+        
+        # Display the 4 independent subtype results[cite: 19]
+        display_cols = [smiles_col, 'A1', 'A2A', 'A2B', 'A3', 'best_target', 'in_database']
+        existing = [c for c in display_cols if c in result_df.columns]
+        st.dataframe(result_df[existing], use_container_width=True)
 
-        csv_bytes = result_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="Download results CSV",
-            data=csv_bytes,
-            file_name="batch_predictions.csv",
-            mime="text/csv",
-        )
-
+        csv = result_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Download Results", data=csv, file_name="ar_batch_results.csv")
 
 def _section_results():
     st.header("Model Results")
@@ -205,9 +205,15 @@ def _section_results():
         except Exception as e:
             st.warning(f"Could not load evaluation report: {e}")
  
-        if Path("outputs/calibration_plot.png").exists():
-            st.subheader("Calibration Plot")
-            st.image("outputs/calibration_plot.png", use_container_width=True)
+        img_path = "outputs/validoutput/standard/calibration_plot.png"
+        if Path(img_path).exists():
+            st.subheader("Calibration Plot standard")
+            st.image(img_path, use_container_width=True)
+
+        img_path = "outputs/validoutput/strict/calibration_plot.png"
+        if Path(img_path).exists():
+            st.subheader("Calibration Plot strict")
+            st.image(img_path, use_container_width=True)
  
     with tab_ood:
         try:

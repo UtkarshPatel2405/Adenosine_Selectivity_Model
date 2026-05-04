@@ -54,7 +54,12 @@ def evaluate(mode: str = "standard",
              out_path: str = "outputs/evaluation_report.json") -> dict:
    
     df, _ = load_and_clean(data_path, mode=mode)
-    train_df, test_df = scaffold_split(df, test_size=test_size, random_state=random_state)
+    train_df, test_df = scaffold_split(
+    df, 
+    test_size=test_size, 
+    random_state=random_state, 
+    smiles_col="canonical_smiles"  # Add this parameter
+)
     X_train, X_test, _scaler = build_feature_matrix(train_df, test_df, smiles_col="canonical_smiles")
 
     y_train_all = train_df["pchembl_value"].to_numpy(dtype=float)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -17,7 +18,6 @@ from sklearn.dummy import DummyRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 
-# Reuse your canonical pipeline pieces
 from src.data_loader import load_and_clean
 
 try:
@@ -25,12 +25,9 @@ try:
 except Exception:
     from src.scaffold_split import scaffold_split
 
-from src.predictor import _load_models, _ensemble_predict, SUBTYPES
 
+from src.predictor import SUBTYPES
 
-# -------------------------
-# utilities
-# -------------------------
 def _ensure_dir(p: str) -> None:
     Path(p).parent.mkdir(parents=True, exist_ok=True)
 
@@ -46,7 +43,6 @@ def _rmse(y_true, y_pred) -> float:
 
 
 def _murcko_scaffold(smiles: str) -> str:
-    # robust scaffold computation for reporting
     try:
         return MurckoScaffold.MurckoScaffoldSmiles(smiles=smiles, includeChirality=False) or ""
     except Exception:
@@ -75,9 +71,27 @@ def _calibration_quartiles(y_true: np.ndarray, y_pred: np.ndarray, y_std: np.nda
     return out
 
 
-# -------------------------
-# feature builders for Phase 6 comparisons
-# -------------------------
+def _load_local_models():
+    """Loads the newly trained XGBoost models."""
+    models = {}
+    for st in SUBTYPES:
+        filename = f"models/xgboost_{st.lower()}_model.pkl"
+        try:
+            with open(filename, "rb") as f:
+                models[st] = pickle.load(f)
+        except FileNotFoundError:
+            print(f"WARNING: Could not find {filename}")
+    return models
+
+def _safe_predict(model, x: np.ndarray) -> Tuple[float, float]:
+    """Handles both single models and ensembles safely."""
+    if isinstance(model, (list, tuple)):
+        preds = np.array([float(m.predict(x.reshape(1, -1))[0]) for m in model])
+        return float(preds.mean()), float(preds.std(ddof=0))
+    else:
+        pred = float(model.predict(x.reshape(1, -1))[0])
+        return pred, 0.0
+
 _MORGAN = GetMorganGenerator(radius=2, fpSize=2048)  # ECFP4-like
 _RDKFP = GetRDKitFPGenerator(fpSize=2048)
 
@@ -85,7 +99,6 @@ _DESC_NAMES = ["MW", "LogP", "HBD", "HBA", "RotBonds", "AromRings", "TPSA"]
 
 
 def _descriptors_from_mol(mol: Chem.Mol) -> np.ndarray:
-    # 7 descriptors per protocol
     mw = Descriptors.MolWt(mol)
     logp = Crippen.MolLogP(mol)
     hbd = Lipinski.NumHDonors(mol)
@@ -109,19 +122,12 @@ def _build_X(
     scaler: StandardScaler | None = None,
     fit_scaler: bool = False,
 ) -> Tuple[np.ndarray, StandardScaler | None]:
-    """
-    kind:
-      - "morgan_only"  -> 2048 bits
-      - "rdkit_only"   -> 2048 bits
-      - "morgan_desc"  -> 2048 bits + 7 scaled desc (fit on train only)
-    """
     fps = []
     descs = []
 
     for smi in df[smiles_col].tolist():
         mol = Chem.MolFromSmiles(smi)
         if mol is None:
-            # Your loader should prevent this; fail fast if it happens
             raise ValueError(f"Invalid SMILES in dataframe: {smi}")
 
         if kind == "morgan_only" or kind == "morgan_desc":
@@ -153,16 +159,8 @@ def _build_X(
     X = np.hstack([X_fp.astype(float), X_desc_scaled])
     return X, scaler
 
-
-# -------------------------
-# evaluations
-# -------------------------
 def _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, y_test) -> dict:
-    """
-    Mirrors your Phase 3.2 evaluator: per-subtype ensemble models + per-subtype baselines,
-    and an overall aggregate across subtype rows.
-    """
-    models = _load_models()
+    models = _load_local_models()
 
     per_subtype = {}
     all_true = []
@@ -178,14 +176,14 @@ def _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, 
         Xte = X_test[test_mask]
         yte = y_test[test_mask]
 
-        if len(yte) == 0:
+        if len(yte) == 0 or st not in models:
             per_subtype[st] = {"n_test": 0, "skipped": True}
             continue
 
         preds = np.zeros((len(yte),), dtype=float)
         stds = np.zeros((len(yte),), dtype=float)
         for i in range(len(yte)):
-            m, s = _ensemble_predict(models[st], Xte[i])
+            m, s = _safe_predict(models[st], Xte[i])
             preds[i] = m
             stds[i] = s
 
@@ -215,7 +213,6 @@ def _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, 
     y_pred = np.concatenate(all_pred) if all_pred else np.array([])
     y_std = np.concatenate(all_std) if all_std else np.array([])
 
-    # overall baseline on all rows
     base_all = DummyRegressor(strategy="mean")
     base_all.fit(X_train, y_train)
     base_pred_all = base_all.predict(X_test)
@@ -237,7 +234,6 @@ def _plot_calibration(calibration_bins: List[dict], out_path: str) -> None:
     _ensure_dir(out_path)
 
     if not calibration_bins:
-        # Create an empty plot with message
         plt.figure(figsize=(6, 4))
         plt.title("Uncertainty calibration (quartiles)")
         plt.text(0.5, 0.5, "Not enough data for calibration bins", ha="center", va="center")
@@ -265,13 +261,7 @@ def _plot_calibration(calibration_bins: List[dict], out_path: str) -> None:
 
 
 def _scaffold_ood_report(train_df, test_df, y_test: np.ndarray, y_pred_test: np.ndarray) -> dict:
-    """
-    Buckets test rows into:
-      - seen_scaffold: scaffold appears in train set
-      - novel_scaffold: scaffold not in train set
-    """
     train_scaffolds = set(train_df["canonical_smiles"].apply(_murcko_scaffold).tolist())
-
     test_scaff = test_df["canonical_smiles"].apply(_murcko_scaffold).tolist()
     is_seen = np.array([s in train_scaffolds and s != "" for s in test_scaff], dtype=bool)
 
@@ -294,31 +284,18 @@ def _scaffold_ood_report(train_df, test_df, y_test: np.ndarray, y_pred_test: np.
 
 
 def _fingerprint_comparison(train_df, test_df, random_state: int, out_csv: str) -> List[dict]:
-    """
-    Compares *baselines* trained directly here (XGBoost not required):
-      - DummyRegressor (mean) on each feature set for sanity
-      - You can extend to XGB later, but protocol only asked performance comparison; MAE is enough.
-    For better scientific value, you should ideally train the same model class (XGB) on each.
-    This version uses a *linear ridge* would be better; but keeping dependencies minimal.
-    """
-    # If you want strict apples-to-apples with your model class, we should train XGB here too.
-    # But that requires importing xgboost and choosing hyperparams. We'll do that now since you already depend on it.
     import xgboost as xgb
 
     y_train = train_df["pchembl_value"].to_numpy(float)
     y_test = test_df["pchembl_value"].to_numpy(float)
-
     rows = []
 
-    # Feature set 1: Morgan only
     Xtr, _ = _build_X(train_df, "canonical_smiles", kind="morgan_only")
     Xte, _ = _build_X(test_df, "canonical_smiles", kind="morgan_only")
 
-    # Feature set 2: RDKit FP only
     Xtr_rdk, _ = _build_X(train_df, "canonical_smiles", kind="rdkit_only")
     Xte_rdk, _ = _build_X(test_df, "canonical_smiles", kind="rdkit_only")
 
-    # Feature set 3: Morgan + 7 desc scaled
     scaler = StandardScaler()
     Xtr_md, scaler = _build_X(train_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=True)
     Xte_md, _ = _build_X(test_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=False)
@@ -329,8 +306,6 @@ def _fingerprint_comparison(train_df, test_df, random_state: int, out_csv: str) 
         ("Morgan2048_plus_7desc", Xtr_md, Xte_md),
     ]
 
-    # Use a single, reasonable XGB config (not tuned) for comparison consistency.
-    # If you have a canonical hyperparam dict in your repo, wire it in here.
     xgb_params = dict(
         n_estimators=500,
         max_depth=8,
@@ -368,25 +343,17 @@ def _fingerprint_comparison(train_df, test_df, random_state: int, out_csv: str) 
 
     return rows
 
-
-# -------------------------
-# main
-# -------------------------
-def main():
-    mode = "professor"
-    data_path = "data/raw/AR_all_unique_parents_with_smiles.csv"
-    test_size = 0.2
-    random_state = 42
-
-    # 1) Load + split once
+def run_phase6_mode(mode: str, data_path: str, test_size: float, random_state: int):
+    print(f"\n--- Running Phase 6 Reporting for Mode: {mode.upper()} ---")
+    
+    # 1) Load + split
     df, _lookup = load_and_clean(data_path, mode=mode)
-    train_df, test_df = scaffold_split(df, test_size=test_size, random_state=random_state)
+    train_df, test_df = scaffold_split(df, test_size=test_size, random_state=random_state, smiles_col="canonical_smiles")
 
     y_train = train_df["pchembl_value"].to_numpy(float)
     y_test = test_df["pchembl_value"].to_numpy(float)
 
-    # 2) Evaluate your actual deployed per-subtype ensemble models using Morgan+desc (protocol pipeline)
-    # Rebuild Morgan+desc features here to ensure a single, consistent run.
+    # 2) Evaluate models
     scaler = StandardScaler()
     X_train, scaler = _build_X(train_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=True)
     X_test, _ = _build_X(test_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=False)
@@ -400,22 +367,26 @@ def main():
         "n_test": int(len(test_df)),
         **eval_report,
     }
-    _write_json("outputs/evaluation_report.json", evaluation_payload)
+    
+    out_dir = f"outputs/validoutput/{mode}"
+    _ensure_dir(out_dir)
+    
+    _write_json(f"{out_dir}/evaluation_report.json", evaluation_payload)
 
-    # 3) Calibration plot (overall bins)
-    _plot_calibration(evaluation_payload["overall"]["calibration_quartiles"], "outputs/calibration_plot.png")
+    
+    _plot_calibration(evaluation_payload["overall"]["calibration_quartiles"], f"{out_dir}/calibration_plot.png")
 
-    # 4) Scaffold OOD report (overall)
-    # Need overall per-row predictions/std for OOD; reuse the per-subtype ensembles.
-    models = _load_models()
+   
+    models = _load_local_models()
     y_pred_all = np.zeros((len(test_df),), dtype=float)
     y_std_all = np.zeros((len(test_df),), dtype=float)
 
     for i in range(len(test_df)):
         st = test_df.iloc[i]["target_subtype"]
-        m, s = _ensemble_predict(models[st], X_test[i])
-        y_pred_all[i] = m
-        y_std_all[i] = s
+        if st in models:
+            m, s = _safe_predict(models[st], X_test[i])
+            y_pred_all[i] = m
+            y_std_all[i] = s
 
     ood = _scaffold_ood_report(train_df, test_df, y_test=y_test, y_pred_test=y_pred_all)
     ood_payload = {
@@ -426,30 +397,30 @@ def main():
         "n_test": int(len(test_df)),
         "ood_by_scaffold": ood,
     }
-    _write_json("outputs/scaffold_ood_report.json", ood_payload)
+    _write_json(f"{out_dir}/scaffold_ood_report.json", ood_payload)
 
-    # 5) Fingerprint comparison (train 3 XGBs on same split)
+   
     fp_rows = _fingerprint_comparison(
         train_df=train_df,
         test_df=test_df,
         random_state=random_state,
-        out_csv="outputs/fingerprint_comparison.csv",
+        out_csv=f"{out_dir}/fingerprint_comparison.csv",
     )
 
-    # Console summary
-    print("Wrote outputs/evaluation_report.json")
-    print("Wrote outputs/calibration_plot.png")
-    print("Wrote outputs/scaffold_ood_report.json")
-    print("Wrote outputs/fingerprint_comparison.csv")
     if evaluation_payload["overall"]["model_mae"] is not None:
         print(
-            f"Overall MAE (ensemble): {evaluation_payload['overall']['model_mae']:.4f} | "
+            f"Overall MAE: {evaluation_payload['overall']['model_mae']:.4f} | "
             f"Baseline MAE: {evaluation_payload['overall']['baseline_mae']:.4f}"
         )
-    if fp_rows:
-        best = sorted(fp_rows, key=lambda r: r["mae"])[0]
-        print(f"Best fingerprint set by MAE: {best['feature_set']} (MAE={best['mae']:.4f})")
 
+
+def main():
+    data_path = "data/raw/AR_all_unique_parents_with_smiles.csv"
+    test_size = 0.2
+    random_state = 42
+
+    for mode in ["standard", "strict"]:
+        run_phase6_mode(mode, data_path, test_size, random_state)
 
 if __name__ == "__main__":
     main()

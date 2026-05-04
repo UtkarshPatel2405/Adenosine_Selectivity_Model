@@ -4,11 +4,11 @@
     "features_test": "data/processed/features_test.pkl",
     "features_train": "data/processed/features_train.pkl",
     "models": [
-      "models/xgb_A1_ens.pkl",
-      "models/xgb_A2A_ens.pkl",
-      "models/xgb_A2B_ens.pkl",
-      "models/xgb_A3_ens.pkl",
-      "models/xgb_global_ens.pkl"
+      "models/xgboost_a1_model.pkl",
+      "models/xgboost_a2a_model.pkl",
+      "models/xgboost_a2b_model.pkl",
+      "models/xgboost_a3_model.pkl",
+      "models/xgboost_model.pkl"
     ],
     "scaler": "models/scaler.pkl",
     "train_fps": "data/processed/train_fps.pkl"
@@ -30,7 +30,7 @@
   "n_lookup_smiles": 6995,
   "n_rows_clean": 6995,
   "sanity": {
-    "desc_mean": 0.0,
+    "desc_mean": 3.505797652181286e-09,
     "fp_unique_values": [
       0.0,
       1.0
@@ -42,5 +42,5 @@
     "random_state": 42,
     "test_size": 0.2
   },
-  "started_at": "2026-05-03T11:51:19"
+  "started_at": "2026-05-04T16:01:20"
 }
