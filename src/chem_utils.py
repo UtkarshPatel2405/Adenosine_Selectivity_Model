@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import pickle
+import os
 from functools import lru_cache
 from typing import Optional
+from pathlib import Path # Ensure Path is imported
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -17,8 +19,11 @@ except ImportError:
 
 _MORGAN = GetMorganGenerator(radius=2, fpSize=2048)
 
+# Calculate the absolute path to the root of your project
+# This assumes chem_utils.py is inside the src/ folder
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 def canonicalize(smiles: str) -> Optional[str]:
-    
     if not isinstance(smiles, str) or not smiles.strip():
         return None
     mol = Chem.MolFromSmiles(smiles)
@@ -26,16 +31,13 @@ def canonicalize(smiles: str) -> Optional[str]:
         return None
     return Chem.MolToSmiles(mol, canonical=True)
 
-
 def mol_from_smiles(smiles: str):
-    
     canon = canonicalize(smiles)
     if canon is None:
         return None
     return Chem.MolFromSmiles(canon)
 
 def draw_2d(smiles: str, size: tuple[int, int] = (400, 300)):
-    
     mol = mol_from_smiles(smiles)
     if mol is None:
         return None
@@ -57,9 +59,7 @@ def _build_pains_catalog():
     params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS_C)
     return FilterCatalog(params)
 
-
 def check_pains(smiles: str) -> list[str]:
-    
     mol = mol_from_smiles(smiles)
     if mol is None:
         return []
@@ -72,7 +72,6 @@ def check_pains(smiles: str) -> list[str]:
     return matches
 
 def qed_profile(smiles: str) -> Optional[dict]:
-   
     mol = mol_from_smiles(smiles)
     if mol is None:
         return None
@@ -89,13 +88,12 @@ def qed_profile(smiles: str) -> Optional[dict]:
 
 @lru_cache(maxsize=1)
 def _load_train_fps():
-    
-    with open("data/processed/train_fps.pkl", "rb") as f:
+    # Use absolute path based on PROJECT_ROOT
+    path = PROJECT_ROOT / "data" / "processed" / "train_fps.pkl"
+    with open(path, "rb") as f:
         return pickle.load(f)
 
-
 def nearest_tanimoto(smiles: str) -> Optional[float]:
-    
     mol = mol_from_smiles(smiles)
     if mol is None:
         return None
@@ -109,12 +107,12 @@ def nearest_tanimoto(smiles: str) -> Optional[float]:
 
 @lru_cache(maxsize=1)
 def _load_train_smiles() -> list[str]:
-    with open("data/processed/train_smiles.pkl", "rb") as f:
+    # Use absolute path based on PROJECT_ROOT
+    path = PROJECT_ROOT / "data" / "processed" / "train_smiles.pkl"
+    with open(path, "rb") as f:
         return pickle.load(f)
 
-
 def topk_tanimoto(smiles: str, k: int = 5) -> tuple[Optional[str], list[tuple[str, float]]]:
-    
     canon = canonicalize(smiles)
     if canon is None:
         return None, []
