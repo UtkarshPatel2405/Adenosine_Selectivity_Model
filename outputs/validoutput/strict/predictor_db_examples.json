@@ -2,16 +2,6 @@
   {
     "result": {
       "best_target": "A2A",
-      "descriptors": {
-        "AromRings": 2,
-        "HBA": 4,
-        "HBD": 0,
-        "LogP": 4.68,
-        "MW": 352.28,
-        "RotBonds": 3,
-        "TPSA": 41.08
-      },
-      "in_database": true,
       "predictions": {
         "A1": 0.0,
         "A2A": 11.0,
@@ -22,29 +12,13 @@
       "source": "database",
       "target_hits": [
         "A2A"
-      ],
-      "uncertainty": {
-        "A1": 0.0,
-        "A2A": 0.0,
-        "A2B": 0.0,
-        "A3": 0.0
-      }
+      ]
     },
     "smiles": "CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S"
   },
   {
     "result": {
       "best_target": "A3",
-      "descriptors": {
-        "AromRings": 5,
-        "HBA": 7,
-        "HBD": 2,
-        "LogP": 2.73,
-        "MW": 411.81,
-        "RotBonds": 3,
-        "TPSA": 128.06
-      },
-      "in_database": true,
       "predictions": {
         "A1": 0.0,
         "A2A": 0.0,
@@ -55,29 +29,13 @@
       "source": "database",
       "target_hits": [
         "A3"
-      ],
-      "uncertainty": {
-        "A1": 0.0,
-        "A2A": 0.0,
-        "A2B": 0.0,
-        "A3": 0.0
-      }
+      ]
     },
     "smiles": "Cl.Cn1cc2c(nc(NC(=O)Nc3ccncc3)n3nc(-c4ccco4)nc23)n1"
   },
   {
     "result": {
       "best_target": "A3",
-      "descriptors": {
-        "AromRings": 5,
-        "HBA": 7,
-        "HBD": 2,
-        "LogP": 2.31,
-        "MW": 375.35,
-        "RotBonds": 3,
-        "TPSA": 128.06
-      },
-      "in_database": true,
       "predictions": {
         "A1": 0.0,
         "A2A": 0.0,
@@ -88,29 +46,13 @@
       "source": "database",
       "target_hits": [
         "A3"
-      ],
-      "uncertainty": {
-        "A1": 0.0,
-        "A2A": 0.0,
-        "A2B": 0.0,
-        "A3": 0.0
-      }
+      ]
     },
     "smiles": "Cn1cc2c(nc(NC(=O)Nc3ccncc3)n3nc(-c4ccco4)nc23)n1"
   },
   {
     "result": {
       "best_target": "A2A",
-      "descriptors": {
-        "AromRings": 4,
-        "HBA": 6,
-        "HBD": 0,
-        "LogP": 3.32,
-        "MW": 315.38,
-        "RotBonds": 3,
-        "TPSA": 61.15
-      },
-      "in_database": true,
       "predictions": {
         "A1": 0.0,
         "A2A": 10.8,
@@ -121,29 +63,13 @@
       "source": "database",
       "target_hits": [
         "A2A"
-      ],
-      "uncertainty": {
-        "A1": 0.0,
-        "A2A": 0.0,
-        "A2B": 0.0,
-        "A3": 0.0
-      }
+      ]
     },
     "smiles": "C=CCn1c(=S)sc2c1ncn1nc(-c3ccco3)nc21"
   },
   {
     "result": {
       "best_target": "A3",
-      "descriptors": {
-        "AromRings": 5,
-        "HBA": 6,
-        "HBD": 1,
-        "LogP": 4.8,
-        "MW": 427.49,
-        "RotBonds": 5,
-        "TPSA": 81.93
-      },
-      "in_database": true,
       "predictions": {
         "A1": 0.0,
         "A2A": 0.0,
@@ -154,13 +80,7 @@
       "source": "database",
       "target_hits": [
         "A3"
-      ],
-      "uncertainty": {
-        "A1": 0.0,
-        "A2A": 0.0,
-        "A2B": 0.0,
-        "A3": 0.0
-      }
+      ]
     },
     "smiles": "COc1ccc(C(=O)Nc2nc(-c3cccs3)nc3cn(-c4ccccc4)nc23)cc1"
   }
