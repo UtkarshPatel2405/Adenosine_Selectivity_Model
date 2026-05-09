@@ -20,15 +20,28 @@ def _load_db_lookup():
     p = Path("data/processed/db_lookup.json")
     return json.load(open(p, "r")) if p.exists() else {}
 
-@lru_cache(maxsize=1)
-def _load_models():
+@lru_cache(maxsize=2)
+def _load_models(mode: str = "standard"):
     models = {}
+    # 1. Try the mode-specific subfolder (standard/strict)
+    model_dir = Path("models") / mode
+    
+    # 2. Fallback: If the subfolder doesn't exist, use the root models folder
+    if not model_dir.exists():
+        print(f"WARNING: {model_dir} not found. Falling back to root 'models/' directory.")
+        model_dir = Path("models")
+
     for st in SUBTYPES:
+        filename = model_dir / f"xgboost_{st.lower()}_model.pkl" 
         
-        filename = f"models/xgboost_{st.lower()}_model.pkl" 
+        if not filename.exists():
+            raise FileNotFoundError(f"Model file NOT found: {filename}")
+            
         with open(filename, "rb") as f:
             models[st] = pickle.load(f)
+            
     return models
+
 def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float]:
     
     if isinstance(model_ens, (list, tuple)):
@@ -39,10 +52,10 @@ def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float]:
         pred = float(model_ens.predict(x.reshape(1, -1))[0])
         return pred, 0.0
 
-def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
+def predict(smiles: str, threshold: float = 6.0, mode: str = "standard") -> Dict[str, Any]:
     scaler = _load_scaler()
     lookup = _load_db_lookup()
-    models = _load_models()
+    models = _load_models(mode=mode)
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None: raise ValueError("Invalid SMILES")
