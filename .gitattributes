@@ -1,3 +1,4 @@
 data/processed/*.pkl filter=lfs diff=lfs merge=lfs -text
 models/*.pkl filter=lfs diff=lfs merge=lfs -text
+models/standard/*.pkl filter=lfs diff=lfs merge=lfs -text
 **/*.pkl filter=lfs diff=lfs merge=lfs -text
