@@ -4,10 +4,7 @@ __pycache__/
 
 # Local caches / artifacts
 cache/
-models/
-outputs/
 reports/
-data/processed/
 
 # Env
 .venv/

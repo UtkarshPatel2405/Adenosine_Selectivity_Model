@@ -1,0 +1,62 @@
+[
+  {
+    "result": {
+      "best_target": "A1",
+      "predictions": {
+        "A1": 7.5925876272534865,
+        "A2A": 6.784937007870603,
+        "A2B": 6.614141959225995,
+        "A3": 6.894548737971652
+      },
+      "smiles": "c1ccc2[nH]ccc2c1",
+      "source": "model",
+      "target_hits": [
+        "A1",
+        "A2A",
+        "A2B",
+        "A3"
+      ]
+    },
+    "smiles": "c1ccc2[nH]ccc2c1"
+  },
+  {
+    "result": {
+      "best_target": "A1",
+      "predictions": {
+        "A1": 7.866517661073061,
+        "A2A": 6.428286499640869,
+        "A2B": 6.75848853451082,
+        "A3": 7.251485866915153
+      },
+      "smiles": "CCN(CC)CCc1ccc2[nH]ccc2c1",
+      "source": "model",
+      "target_hits": [
+        "A1",
+        "A2A",
+        "A2B",
+        "A3"
+      ]
+    },
+    "smiles": "CCN(CC)CCc1ccc2[nH]ccc2c1"
+  },
+  {
+    "result": {
+      "best_target": "A1",
+      "predictions": {
+        "A1": 7.545431443788473,
+        "A2A": 7.24435497645614,
+        "A2B": 6.982593427101771,
+        "A3": 6.671823947506432
+      },
+      "smiles": "CCOc1ccc2nc(S(N)(=O)=O)sc2c1",
+      "source": "model",
+      "target_hits": [
+        "A1",
+        "A2A",
+        "A2B",
+        "A3"
+      ]
+    },
+    "smiles": "CCOc1ccc2nc(S(N)(=O)=O)sc2c1"
+  }
+]
