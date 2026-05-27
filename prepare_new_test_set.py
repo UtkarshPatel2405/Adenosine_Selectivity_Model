@@ -47,7 +47,7 @@ def prepare_test_set():
         print(f"Loaded {len(df)} rows from {subtype}.")
         
         for idx, row in df.iterrows():
-            smi = row.get('SMILES')
+            smi = row.get('SMILES') if pd.notna(row.get('SMILES')) else row.get('Smiles')
             p_val = row.get('p-value (-log)')
             
             # Skip missing data
@@ -73,13 +73,13 @@ def prepare_test_set():
             current_val = novel_molecules[canon].get(subtype, 0)
             novel_molecules[canon][subtype] = max(current_val, float(p_val))
 
-    print(f"\n✅ Processing complete!")
-    print(f"🛑 Skipped {total_skipped_seen} occurrences of already-seen molecules.")
-    print(f"✨ Found {total_new_mols} completely novel unique molecules!")
+    print(f"\nProcessing complete!")
+    print(f"Skipped {total_skipped_seen} occurrences of already-seen molecules.")
+    print(f"Found {total_new_mols} completely novel unique molecules!")
 
     # 3. Convert back to DataFrame and save
     if not novel_molecules:
-        print("❌ No novel molecules found! Exiting.")
+        print("No novel molecules found! Exiting.")
         return
 
     # Convert to DataFrame
@@ -102,7 +102,7 @@ def prepare_test_set():
     
     out_path = out_dir / "novel_test_set.csv"
     novel_df.to_csv(out_path, index=False)
-    print(f"\n💾 Saved novel test set to: {out_path}")
+    print(f"\nSaved novel test set to: {out_path}")
     print("Ready to run in the Batch Predictor!")
 
 if __name__ == "__main__":

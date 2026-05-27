@@ -18,11 +18,11 @@ It is designed for early‑stage drug discovery on Adenosine receptors.
 
 | Metric | Value |
 |--------|-------|
-| **Mean $R^2$**   | *{INSERT XGB_R2_MEAN HERE}* |
-| **Mean $MAE$**   | *{INSERT XGB_MAE_MEAN HERE}* |
-| **Validation**   | 5‑repeat scaffold‑aware cross‑validation |
-| **Featurization**| Morgan fingerprints (ECFP4‑like, 2048 bits) + RDKit descriptors |
-| **Training data**| ~9 600 curated ChEMBL compounds |
+| **Mean $R^2$**   | 0.411 |
+| **Mean $MAE$**   | 0.516 |
+| **Validation**   | Scaffold split (80-20) |
+| **Featurization**| Morgan fingerprints (2048 bits) + MACCS keys (166 bits) + RDKit continuous descriptors (~137) |
+| **Training data**| 9,589 high-quality curated ChEMBL compounds |
 
 > **How to get the exact numbers:**  
 > Run the validation pipeline: `python ml_validate_scaffold_ad.py`  

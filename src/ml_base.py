@@ -7,10 +7,7 @@ import pickle
 import os
 
 # Import scaffold split logic
-try:
-    from src.data_splitter import scaffold_split
-except ImportError:
-    from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split
 
 sns.set_style("whitegrid")
 
@@ -20,45 +17,20 @@ os.makedirs('outputs', exist_ok=True)
 
 # Preprocessing
 def preprocess_data(df, use_fingerprints=True, use_properties=True, n_bits=2048):
-    from src.molecular_features import extract_features_from_smiles
     df = df.reset_index(drop=True)
     print("\n" + "="*80)
-    print("DATA PREPROCESSING - FINGERPRINT BIOACTIVITY MODEL")
+    print("DATA PREPROCESSING - MOLECULAR FEATURES UPGRADED PIPELINE")
     print("="*80)
     
-    print("\n[INFO] REMOVING DATA LEAKAGE:")
-    print("   [EXCLUDING] standard_value (data leakage)")
-    print("   [EXCLUDING] confidence_score")
-    print("   [EXCLUDING] n_targets_hit")
-    print("   [INCLUDING] Morgan Fingerprints (chemical structure)")
-    print("   [INCLUDING] Physicochemical Properties (molecular descriptors)")
+    # Standardize column naming
+    if 'canonical_smiles' in df.columns and 'smiles' not in df.columns:
+        df = df.rename(columns={'canonical_smiles': 'smiles'})
+        
+    y = df['pchembl_value'].copy()
+    valid_smiles = df['smiles'].copy()
     
-    # Extract features from SMILES
-    X, valid_indices = extract_features_from_smiles(
-        df, 
-        use_fingerprints=use_fingerprints,
-        use_properties=use_properties,
-        n_bits=n_bits
-    )
-    
-    if X is None:
-        print("[ERROR] Failed to extract features!")
-        return None
-    
-    # Get target values and smiles for valid molecules
-    y = df.loc[valid_indices, 'pchembl_value'].copy()
-    valid_smiles = df.loc[valid_indices, 'smiles'].copy()
-    
-    print(f"\n[INFO] DATASET INFO:")
-    print(f"   Total molecules: {len(df)}")
-    print(f"   Valid molecules: {len(valid_indices)}")
-    print(f"   Features: {X.shape[1]}")
-    print(f"   Target: {y.shape[0]} values")
-    print(f"   Target range: {y.min():.2f} to {y.max():.2f}")
-    
-    # Combine temporarily for the scaffold split
+    # Combine temporarily for scaffold split
     temp_df = pd.DataFrame({'smiles': valid_smiles, 'pchembl_value': y})
-    temp_df = pd.concat([temp_df, X], axis=1)
     
     # Scaffold split (80-20)
     train_df, test_df = scaffold_split(temp_df, test_size=0.2, random_state=42)
@@ -66,49 +38,19 @@ def preprocess_data(df, use_fingerprints=True, use_properties=True, n_bits=2048)
     y_train = train_df['pchembl_value'].reset_index(drop=True)
     y_test = test_df['pchembl_value'].reset_index(drop=True)
     
-    X_train = train_df.drop(columns=['smiles', 'pchembl_value']).reset_index(drop=True)
-    X_test = test_df.drop(columns=['smiles', 'pchembl_value']).reset_index(drop=True)
+    from src.features import build_feature_matrix
+    X_train, X_test, pipeline = build_feature_matrix(train_df, test_df, smiles_col='smiles')
     
-    print(f"\nTrain set: {X_train.shape[0]} samples")
-    print(f"Test set:  {X_test.shape[0]} samples")
+    # Generate feature names for DataFrame conversion
+    feature_names = [f"Morgan_FP_{i}" for i in range(2048)] + [f"MACCS_{i}" for i in range(167)]
+    selected_desc_names = pipeline.feature_filter.feature_names
+    feature_names.extend(selected_desc_names)
     
-    # Selective Feature Scaling
-    scaler = None
-    if use_properties:
-        scaler = StandardScaler()
-        
-        # Separate continuous properties from binary fingerprints
-        if use_fingerprints:
-            prop_cols = X_train.columns[n_bits:]
-            fp_cols = X_train.columns[:n_bits]
-        else:
-            prop_cols = X_train.columns
-            fp_cols = []
-            
-        if len(prop_cols) > 0:
-            X_train_props_scaled = scaler.fit_transform(X_train[prop_cols])
-            X_test_props_scaled = scaler.transform(X_test[prop_cols])
-            
-            # Recombine scaled properties with unscaled binary fingerprints
-            X_train_scaled = pd.concat([
-                X_train[fp_cols], 
-                pd.DataFrame(X_train_props_scaled, columns=prop_cols)
-            ], axis=1)
-            
-            X_test_scaled = pd.concat([
-                X_test[fp_cols], 
-                pd.DataFrame(X_test_props_scaled, columns=prop_cols)
-            ], axis=1)
-        else:
-            X_train_scaled = X_train
-            X_test_scaled = X_test
-    else:
-        X_train_scaled = X_train
-        X_test_scaled = X_test
+    X_train_df = pd.DataFrame(X_train, columns=feature_names)
+    X_test_df = pd.DataFrame(X_test, columns=feature_names)
     
-    print("\n[SUCCESS] Scaling complete. Binary fingerprints preserved, continuous properties scaled.")
-    
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, X.columns
+    print("\n[SUCCESS] Feature processing complete with RDKit, MACCS, and filtered descriptors.")
+    return X_train_df, X_test_df, y_train, y_test, pipeline, feature_names
 
 # Evaluation
 def evaluate_regression(y_true, y_pred, model_name):

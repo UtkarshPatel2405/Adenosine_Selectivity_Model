@@ -5,16 +5,16 @@ from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 def _murcko_scaffold_smiles(smiles: str) -> str:
-    """Return Bemis Murcko scaffold SMILES (canonical)."""
+    """Return Bemis Murcko scaffold SMILES (canonical, without chirality)."""
     try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
+        scaf_smiles = MurckoScaffold.MurckoScaffoldSmiles(smiles=smiles, includeChirality=False)
+        if not scaf_smiles:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                Chem.RemoveStereochemistry(mol)
+                return Chem.MolToSmiles(mol, canonical=True)
             return "__INVALID__"
-        scaf = MurckoScaffold.GetScaffoldForMol(mol)
-        if scaf is None:
-            return "__NO_SCAFFOLD__"
-        s = Chem.MolToSmiles(scaf, canonical=True)
-        return s if s else "__NO_SCAFFOLD__"
+        return scaf_smiles
     except Exception:
         return "__INVALID__"
 
