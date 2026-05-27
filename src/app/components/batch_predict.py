@@ -141,13 +141,12 @@ def predict_batch(
                 reliability_scores.append(max(sims))
             res_df.loc[novel_mask, 'reliability'] = reliability_scores
 
-    # Phase 3: Global Metrics
     valid_mask = res_df['canonical_smiles'].notna()
     if valid_mask.any():
         if status_area: status_area.text("Finalizing result dashboard...")
         res_df.loc[valid_mask, 'best_target'] = res_df.loc[valid_mask, SUBTYPES].idxmax(axis=1)
         res_df.loc[valid_mask, 'target_hits'] = res_df.loc[valid_mask, SUBTYPES].apply(
-            lambda r: [st for st in SUBTYPES if r[st] >= threshold], axis=1
+            lambda r: ", ".join([st for st in SUBTYPES if r[st] >= threshold]), axis=1
         )
 
     # Clean up the UI
