@@ -49,6 +49,81 @@ def draw_2d(smiles: str, size: tuple[int, int] = (400, 300)):
     except Exception:
         return None
 
+def draw_2d_svg(smiles: str, size: tuple[int, int] = (400, 300)) -> Optional[str]:
+    mol = mol_from_smiles(smiles)
+    if mol is None:
+        return None
+    try:
+        from rdkit.Chem import rdDepictor
+        from rdkit.Chem.Draw import rdMolDraw2D
+        rdDepictor.Compute2DCoords(mol)
+        drawer = rdMolDraw2D.MolDraw2DSVG(size[0], size[1])
+        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        return drawer.GetDrawingText()
+    except Exception:
+        return None
+
+def generate_3d_conformer(smiles: str) -> tuple[Optional[str], float, float]:
+    """
+    Generates a 3D conformer using ETKDGv3, optimizes it using MMFF94 force field,
+    and calculates Gasteiger partial charges.
+    Returns (mol_block, min_charge, max_charge).
+    """
+    mol = mol_from_smiles(smiles)
+    if mol is None:
+        return None, 0.0, 0.0
+    
+    try:
+        # Add hydrogens for proper 3D geometry
+        mol_3d = Chem.AddHs(mol)
+        
+        # Generate 3D coordinates using ETKDGv3
+        embed_status = AllChem.EmbedMolecule(mol_3d, AllChem.ETKDGv3())
+        if embed_status != 0:
+            # Fallback to standard distance geometry if ETKDGv3 fails
+            embed_status = AllChem.EmbedMolecule(mol_3d)
+            
+        if embed_status == 0:
+            # Optimize structure using MMFF94 force field
+            AllChem.MMFFOptimizeMolecule(mol_3d)
+            
+        # Compute Gasteiger partial charges
+        AllChem.ComputeGasteigerCharges(mol_3d)
+        
+        # Extract charge bounds
+        charges = []
+        for atom in mol_3d.GetAtoms():
+            if atom.HasProp("_GasteigerCharge"):
+                try:
+                    c = float(atom.GetProp("_GasteigerCharge"))
+                    if not np.isnan(c) and not np.isinf(c):
+                        charges.append(c)
+                except ValueError:
+                    pass
+        
+        min_charge = min(charges) if charges else 0.0
+        max_charge = max(charges) if charges else 0.0
+        
+        # Convert to Mol block string
+        mol_block = Chem.MolToMolBlock(mol_3d)
+        return mol_block, min_charge, max_charge
+    except Exception:
+        # Fallback: compute Gasteiger charges on 2D mol if 3D conformer fails
+        try:
+            AllChem.ComputeGasteigerCharges(mol)
+            charges = []
+            for atom in mol.GetAtoms():
+                if atom.HasProp("_GasteigerCharge"):
+                    c = float(atom.GetProp("_GasteigerCharge"))
+                    if not np.isnan(c) and not np.isinf(c):
+                        charges.append(c)
+            min_charge = min(charges) if charges else 0.0
+            max_charge = max(charges) if charges else 0.0
+            return None, min_charge, max_charge
+        except Exception:
+            return None, 0.0, 0.0
+
 @lru_cache(maxsize=1)
 def _build_pains_catalog():
     if not _FILTER_CATALOG_AVAILABLE:

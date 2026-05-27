@@ -20,10 +20,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.data_loader import load_and_clean
 
-try:
-    from src.data_splitter import scaffold_split
-except Exception:
-    from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split
 
 
 from src.predictor import SUBTYPES
@@ -71,16 +68,22 @@ def _calibration_quartiles(y_true: np.ndarray, y_pred: np.ndarray, y_std: np.nda
     return out
 
 
-def _load_local_models():
+def _load_local_models(mode: str = "standard"):
     """Loads the newly trained XGBoost models."""
     models = {}
     for st in SUBTYPES:
-        filename = f"models/xgboost_{st.lower()}_model.pkl"
+        filename = f"models/{mode}/xgboost_{mode}_{st.lower()}_model.pkl"
+        if not Path(filename).exists():
+            filename = f"models/{mode}/xgboost_{st.lower()}_model.pkl"
+        if not Path(filename).exists():
+            filename = f"models/xgboost_{mode}_{st.lower()}_model.pkl"
+        if not Path(filename).exists():
+            filename = f"models/xgboost_{st.lower()}_model.pkl"
         try:
             with open(filename, "rb") as f:
                 models[st] = pickle.load(f)
         except FileNotFoundError:
-            print(f"WARNING: Could not find {filename}")
+            print(f"WARNING: Could not find model for {st} ({mode} mode)")
     return models
 
 def _safe_predict(model, x: np.ndarray) -> Tuple[float, float]:
@@ -159,8 +162,8 @@ def _build_X(
     X = np.hstack([X_fp.astype(float), X_desc_scaled])
     return X, scaler
 
-def _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, y_test) -> dict:
-    models = _load_local_models()
+def _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, y_test, mode: str = "standard") -> dict:
+    models = _load_local_models(mode)
 
     per_subtype = {}
     all_true = []
@@ -358,7 +361,7 @@ def run_phase6_mode(mode: str, data_path: str, test_size: float, random_state: i
     X_train, scaler = _build_X(train_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=True)
     X_test, _ = _build_X(test_df, "canonical_smiles", kind="morgan_desc", scaler=scaler, fit_scaler=False)
 
-    eval_report = _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, y_test)
+    eval_report = _evaluate_per_subtype_ensemble(train_df, test_df, X_train, X_test, y_train, y_test, mode=mode)
     evaluation_payload = {
         "mode": mode,
         "data_path": data_path,
@@ -368,16 +371,17 @@ def run_phase6_mode(mode: str, data_path: str, test_size: float, random_state: i
         **eval_report,
     }
     
+    infix = "std" if mode == "standard" else "strict" if mode == "strict" else "root"
     out_dir = f"outputs/validoutput/{mode}"
     _ensure_dir(out_dir)
     
-    _write_json(f"{out_dir}/evaluation_report.json", evaluation_payload)
+    _write_json(f"{out_dir}/evaluation_{infix}_report.json", evaluation_payload)
 
     
-    _plot_calibration(evaluation_payload["overall"]["calibration_quartiles"], f"{out_dir}/calibration_plot.png")
+    _plot_calibration(evaluation_payload["overall"]["calibration_quartiles"], f"{out_dir}/calibration_{infix}_plot.png")
 
    
-    models = _load_local_models()
+    models = _load_local_models(mode)
     y_pred_all = np.zeros((len(test_df),), dtype=float)
     y_std_all = np.zeros((len(test_df),), dtype=float)
 
@@ -397,14 +401,14 @@ def run_phase6_mode(mode: str, data_path: str, test_size: float, random_state: i
         "n_test": int(len(test_df)),
         "ood_by_scaffold": ood,
     }
-    _write_json(f"{out_dir}/scaffold_ood_report.json", ood_payload)
+    _write_json(f"{out_dir}/scaffold_ood_{infix}_report.json", ood_payload)
 
    
     fp_rows = _fingerprint_comparison(
         train_df=train_df,
         test_df=test_df,
         random_state=random_state,
-        out_csv=f"{out_dir}/fingerprint_comparison.csv",
+        out_csv=f"{out_dir}/fingerprint_{infix}_comparison.csv",
     )
 
     if evaluation_payload["overall"]["model_mae"] is not None:
@@ -419,7 +423,7 @@ def main():
     test_size = 0.2
     random_state = 42
 
-    for mode in ["standard", "strict"]:
+    for mode in ["precise"]:
         run_phase6_mode(mode, data_path, test_size, random_state)
 
 if __name__ == "__main__":

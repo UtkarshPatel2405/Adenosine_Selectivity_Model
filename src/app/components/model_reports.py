@@ -5,6 +5,37 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import pandas as pd
 
+def _get_mode_infix(base: str) -> str:
+    """Extract mode infix (std, strict, root, precise) from directory path."""
+    b = str(base).lower()
+    if "standard" in b or b.endswith("std"):
+        return "std"
+    elif "strict" in b:
+        return "strict"
+    elif "precise" in b:
+        return "precise"
+    else:
+        return "root"
+
+def _find_file(base: str, pattern: str) -> Path:
+    """Find file in base dir matching pattern, with fallback to 'root' or 'precise' if missing."""
+    p1 = Path(base) / pattern
+    if p1.exists():
+        return p1
+    
+    infix = _get_mode_infix(base)
+    if infix == "precise":
+        fallback_pattern = pattern.replace("_precise_", "_root_")
+        p2 = Path(base) / fallback_pattern
+        if p2.exists():
+            return p2
+    elif infix == "root":
+        fallback_pattern = pattern.replace("_root_", "_precise_")
+        p2 = Path(base) / fallback_pattern
+        if p2.exists():
+            return p2
+    return p1
+
 def _load_json(path: str) -> dict:
     """Safely load JSON, returning empty dict if file is missing."""
     if not Path(path).exists():
@@ -13,7 +44,9 @@ def _load_json(path: str) -> dict:
         return json.load(f)
 
 def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[pd.DataFrame, pd.DataFrame]:
-    report = _load_json(f"{base}/evaluation_report.json")
+    infix = _get_mode_infix(base)
+    path = _find_file(base, f"evaluation_{infix}_report.json")
+    report = _load_json(str(path))
     if not report:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -40,21 +73,26 @@ def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[
     return overall_df, per_df
 
 def load_fingerprint_comparison(base: str = "outputs/validoutput/standard") -> pd.DataFrame:
-    path = Path(f"{base}/fingerprint_comparison.csv")
+    infix = _get_mode_infix(base)
+    path = _find_file(base, f"fingerprint_{infix}_comparison.csv")
     if not path.exists():
         return pd.DataFrame()
     return pd.read_csv(path)
 
 def load_scaffold_ood(base: str = "outputs/validoutput/standard") -> pd.DataFrame:
-    data = _load_json(f"{base}/scaffold_ood_report.json")
+    infix = _get_mode_infix(base)
+    path = _find_file(base, f"scaffold_ood_{infix}_report.json")
+    data = _load_json(str(path))
     ood = data.get("ood_by_scaffold", {})
     if not ood:
         return pd.DataFrame()
     rows = [{"Scaffold": k, **v} for k, v in ood.items()]
-    return pd.DataFrame(rows).sort_values("count", ascending=False)
+    return pd.DataFrame(rows).sort_values("n", ascending=False)
 
 def load_run_summary(base: str = "outputs/validoutput/standard") -> pd.DataFrame:
-    s = _load_json(f"{base}/run_summary.json")
+    infix = _get_mode_infix(base)
+    path = _find_file(base, f"run_{infix}_summary.json")
+    s = _load_json(str(path))
     if not s:
         return pd.DataFrame([{"Status": "Data not found"}])
     return pd.DataFrame([{
@@ -90,7 +128,7 @@ def _examples_to_df(path: str) -> pd.DataFrame:
                 sim_str = "0"
         except Exception:
             sim_str = "0"
-
+ 
         rows.append({
             "SMILES": smi,
             "Source": r.get("source"),
@@ -103,21 +141,28 @@ def _examples_to_df(path: str) -> pd.DataFrame:
 
 def load_mode_examples(mode: str, base: str = "outputs/validoutput"):
     base_dir = f"{base}/{mode}"
-    db_df = _examples_to_df(f"{base_dir}/predictor_db_examples.json")
-    novel_df = _examples_to_df(f"{base_dir}/predictor_novel_examples.json")
+    infix = "std" if mode == "standard" else "strict" if mode == "strict" else "root"
+    db_path = _find_file(base_dir, f"predictor_db_{infix}_examples.json")
+    novel_path = _find_file(base_dir, f"predictor_novel_{infix}_examples.json")
+    db_df = _examples_to_df(str(db_path))
+    novel_df = _examples_to_df(str(novel_path))
     summary_df = load_run_summary(base=base_dir)
     return summary_df, db_df, novel_df
 
 def load_examples(base: str = "outputs/validoutput/standard") -> Tuple[pd.DataFrame, pd.DataFrame]:
-    db_df = _examples_to_df(f"{base}/predictor_db_examples.json")
-    novel_df = _examples_to_df(f"{base}/predictor_novel_examples.json")
+    infix = _get_mode_infix(base)
+    db_path = _find_file(base, f"predictor_db_{infix}_examples.json")
+    novel_path = _find_file(base, f"predictor_novel_{infix}_examples.json")
+    db_df = _examples_to_df(str(db_path))
+    novel_df = _examples_to_df(str(novel_path))
     return db_df, novel_df
 
 def outputs_exist(base: str = "outputs/validoutput/standard") -> Dict[str, bool]:
+    infix = _get_mode_infix(base)
     files = [
-        "run_summary.json",
-        "predictor_db_examples.json",
-        "predictor_novel_examples.json",
-        "evaluation_report.json",
+        f"run_{infix}_summary.json",
+        f"predictor_db_{infix}_examples.json",
+        f"predictor_novel_{infix}_examples.json",
+        f"evaluation_{infix}_report.json",
     ]
-    return {f: Path(f"{base}/{f}").exists() for f in files}
+    return {f: _find_file(base, f).exists() for f in files}

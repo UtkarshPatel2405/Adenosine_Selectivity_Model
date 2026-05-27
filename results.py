@@ -7,13 +7,10 @@ import numpy as np
 
 # Pipeline components
 from src.data_loader import load_and_clean
-try:
-    from src.data_splitter import scaffold_split
-except Exception:
-    from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split
 
 from src.features import build_features
-from src.predictor import SUBTYPES, _load_scaler
+from src.predictor import SUBTYPES, _load_scaler, _ensemble_predict
 
 def _write_json(path: str, obj):
     p = Path(path)
@@ -33,7 +30,10 @@ def local_predict_for_report(smiles: str, models: dict, lookup: dict, scaler, th
         source = "database"
     else:
         x = build_features(canon, scaler)
-        preds = {st: float(models[st].predict(x.reshape(1, -1))[0]) for st in SUBTYPES}
+        preds = {}
+        for st in SUBTYPES:
+            m_val, s_val, _, _ = _ensemble_predict(models[st], x)
+            preds[st] = m_val
         source = "model"
 
     return {
@@ -47,24 +47,26 @@ def local_predict_for_report(smiles: str, models: dict, lookup: dict, scaler, th
 def run_mode(mode: str, out_dir: str, hit_threshold: float = 6.0):
     print(f"\n>>> Running Pipeline: {mode.upper()}")
     
-   
     df, lookup = load_and_clean("data/raw/AR_all_unique_parents_with_smiles.csv", mode=mode)
-    scaler = _load_scaler()
+    scaler = _load_scaler(mode=mode)
     
-   
     models = {}
     for st in SUBTYPES:
-        file_name = f"xgboost_{st.lower()}_model.pkl"
+        file_name_mode = f"xgboost_{mode}_{st.lower()}_model.pkl"
+        file_name_legacy = f"xgboost_{st.lower()}_model.pkl"
         
-       
-        primary = Path("models") / mode / file_name
-        
-        fallback = Path("models") / "standard" / file_name
-        
+        primary = Path("models") / mode / file_name_mode
+        if not primary.exists():
+            primary = Path("models") / mode / file_name_legacy
+            
+        fallback = Path("models") / "standard" / f"xgboost_standard_{st.lower()}_model.pkl"
+        if not fallback.exists():
+            fallback = Path("models") / "standard" / file_name_legacy
+            
         load_path = primary if primary.exists() else fallback
         
         if not load_path.exists():
-            print(f"CRITICAL ERROR: {file_name} missing from both {mode} and standard folders.")
+            print(f"CRITICAL ERROR: Model for {st} missing from both {mode} and fallback standard folders.")
             continue
             
         with open(load_path, "rb") as f:
@@ -84,24 +86,25 @@ def run_mode(mode: str, out_dir: str, hit_threshold: float = 6.0):
         novel_results.append({"smiles": s, "result": res})
 
     
-    _write_json(f"{out_dir}/run_summary.json", {
+    infix = "std" if mode == "standard" else "strict" if mode == "strict" else "root"
+    _write_json(f"{out_dir}/run_{infix}_summary.json", {
         "mode": mode,
         "n_rows_clean": len(df),
         "n_lookup_smiles": len(lookup),
         "timestamp": datetime.now().isoformat()
     })
-    _write_json(f"{out_dir}/predictor_db_examples.json", db_results)
-    _write_json(f"{out_dir}/predictor_novel_examples.json", novel_results)
+    _write_json(f"{out_dir}/predictor_db_{infix}_examples.json", db_results)
+    _write_json(f"{out_dir}/predictor_novel_{infix}_examples.json", novel_results)
     print(f"DONE: Results saved to {out_dir}")
 
 def main():
    
-    for m in ["standard", "strict"]:
+    for m in ["precise"]:
         os.makedirs(f"outputs/validoutput/{m}", exist_ok=True)
         os.makedirs(f"models/{m}", exist_ok=True)
 
    
-    for mode in ["standard", "strict"]:
+    for mode in ["precise"]:
         run_mode(mode, f"outputs/validoutput/{mode}")
 
 if __name__ == "__main__":

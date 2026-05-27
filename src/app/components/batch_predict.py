@@ -20,12 +20,13 @@ def predict_batch(
     df: pd.DataFrame, 
     threshold: float = 6.0, 
     smiles_col: str | None = None,
-    show_progress: bool = True
+    show_progress: bool = True,
+    mode: str = "standard"
 ) -> pd.DataFrame:
     col = smiles_col or _infer_smiles_col(df)
-    scaler = _load_scaler()
+    scaler = _load_scaler(mode=mode)
     lookup = _load_db_lookup()
-    models = _load_models()
+    models = _load_models(mode=mode)
     
     total_mols = len(df)
     
@@ -97,8 +98,32 @@ def predict_batch(
             
             ensemble = models[st_name]
             
-            # Safe prediction handling for both Ensembles (list) and Single Models (XGBRegressor)
-            if isinstance(ensemble, (list, tuple)):
+            # Prediction handling supporting MapieRegressor, CrossConformalRegressor, Legacy Ensembles, and Single Models
+            if type(ensemble).__name__ == "CrossConformalRegressor":
+                y_pred, y_pis = ensemble.predict_interval(x_batch)
+                res_df.loc[novel_mask, st_name] = y_pred
+                if y_pis.ndim == 3:
+                    lower = y_pis[:, 0, 0]
+                    upper = y_pis[:, 1, 0]
+                else:
+                    lower = y_pis[:, 0]
+                    upper = y_pis[:, 1]
+                res_df.loc[novel_mask, f"{st_name}_uncertainty"] = (upper - lower) / 3.29
+                res_df.loc[novel_mask, f"{st_name}_lower"] = lower
+                res_df.loc[novel_mask, f"{st_name}_upper"] = upper
+            elif type(ensemble).__name__ == "MapieRegressor":
+                y_pred, y_pis = ensemble.predict(x_batch, alpha=0.10)
+                res_df.loc[novel_mask, st_name] = y_pred
+                if y_pis.ndim == 3:
+                    lower = y_pis[:, 0, 0]
+                    upper = y_pis[:, 1, 0]
+                else:
+                    lower = y_pis[:, 0]
+                    upper = y_pis[:, 1]
+                res_df.loc[novel_mask, f"{st_name}_uncertainty"] = (upper - lower) / 3.29
+                res_df.loc[novel_mask, f"{st_name}_lower"] = lower
+                res_df.loc[novel_mask, f"{st_name}_upper"] = upper
+            elif isinstance(ensemble, (list, tuple)):
                 member_preds = np.array([m.predict(x_batch) for m in ensemble])
                 res_df.loc[novel_mask, st_name] = member_preds.mean(axis=0)
                 res_df.loc[novel_mask, f"{st_name}_uncertainty"] = member_preds.std(axis=0, ddof=0)
