@@ -202,3 +202,19 @@ def topk_tanimoto(smiles: str, k: int = 5) -> tuple[Optional[str], list[tuple[st
     idx = np.argsort(sims)[::-1][:k]
     top = [(train_smiles[i], float(sims[i])) for i in idx]
     return canon, top
+
+def generate_pdb_block(smiles: str) -> Optional[str]:
+    """Generates a 3D conformer and returns the PDB block string."""
+    mol = mol_from_smiles(smiles)
+    if mol is None:
+        return None
+    try:
+        mol_3d = Chem.AddHs(mol)
+        embed_status = AllChem.EmbedMolecule(mol_3d, AllChem.ETKDGv3())
+        if embed_status != 0:
+            embed_status = AllChem.EmbedMolecule(mol_3d)
+        if embed_status == 0:
+            AllChem.MMFFOptimizeMolecule(mol_3d)
+        return Chem.MolToPDBBlock(mol_3d)
+    except Exception:
+        return None

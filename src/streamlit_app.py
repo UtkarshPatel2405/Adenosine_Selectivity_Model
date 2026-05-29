@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+import shap
+import pickle
+import matplotlib.pyplot as plt
 
 # Ensure project root is in python path
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,6 +29,108 @@ from src.app.components.model_reports import (
     load_examples,
     outputs_exist,
 )
+
+def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    mol = Chem.MolFromSmiles(smiles) if smiles else None
+    
+    desc_explanations = {
+        "MolLogP": "Lipophilicity (Octanol-water partition coefficient). A higher value increases hydrophobic interactions but may reduce solubility.",
+        "TPSA": "Topological Polar Surface Area. Represents molecular polarity; crucial for cell membrane permeability and BBB penetration.",
+        "MolWt": "Molecular Weight. Represents molecular size. High weight can decrease oral absorption (Lipinski's Rule of 5).",
+        "NumHDonors": "Hydrogen Bond Donors. The number of NH or OH groups in the molecule.",
+        "NumHAcceptors": "Hydrogen Bond Acceptors. The number of nitrogen or oxygen atoms with lone pairs.",
+        "NumRotatableBonds": "Rotatable Bonds. Indicates molecular flexibility. Lower flexibility often reduces binding entropy loss.",
+        "NumAromaticRings": "Aromatic Rings. Direct participant in pi-pi stacking interactions with target receptor binding pockets.",
+        "FractionCSP3": "Saturated Carbons (sp3 fraction). Indicates molecular 3D complexity and saturation; correlated with better solubility.",
+        "MolMR": "Molecular Refractivity. Represents molecular volume and polarizability.",
+        "MaxAbsPartialCharge": "Maximum absolute partial charge. High charge density can affect electrostatic binding interactions.",
+        "MinPartialCharge": "Minimum partial charge. Represents the most negatively charged region, often active in hydrogen bonding."
+    }
+    
+    if name in desc_explanations:
+        return {
+            "Type": "Physicochemical Property",
+            "Property": name,
+            "Query Value": f"{val:.3f}" if isinstance(val, (int, float)) else str(val),
+            "Interpretation": desc_explanations[name]
+        }
+    
+    if not (name.startswith("Morgan_FP_") or name.startswith("MACCS_")):
+        clean_name = name.replace("_", " ")
+        return {
+            "Type": "Physicochemical Property",
+            "Property": name,
+            "Query Value": f"{val:.3f}" if isinstance(val, (int, float)) else str(val),
+            "Interpretation": f"Continuous descriptor '{clean_name}' calculated by RDKit representing molecular structure topology or charge."
+        }
+        
+    maccs_dict = {
+        "MACCS_115": "Presence of CH3 (methyl) or terminal alkyl group.",
+        "MACCS_137": "Presence of a Carbonyl group (C=O).",
+        "MACCS_139": "Presence of a primary or secondary amine.",
+        "MACCS_143": "Presence of a N-C-O or similar polar linker fragment.",
+        "MACCS_153": "Presence of a C=C double bond (alkene).",
+        "MACCS_155": "Presence of Halogen atoms (F, Cl, Br, I).",
+        "MACCS_160": "Presence of a CH3 group.",
+        "MACCS_164": "Presence of one or more Oxygen atoms.",
+        "MACCS_165": "Presence of a Ring structure."
+    }
+    
+    if name.startswith("MACCS_"):
+        key_num = name.split("_")[1]
+        interpretation = maccs_dict.get(name, f"MACCS Key #{key_num} (standard structural fragment pattern).")
+        return {
+            "Type": "MACCS Structural Key",
+            "Property": name,
+            "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
+            "Interpretation": interpretation
+        }
+        
+    if name.startswith("Morgan_FP_"):
+        bit_idx = int(name.split("_")[2])
+        if mol is None:
+            return {
+                "Type": "Morgan Fingerprint Bit",
+                "Property": name,
+                "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
+                "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}."
+            }
+            
+        info = {}
+        try:
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048, bitInfo=info)
+            if bit_idx in info and len(info[bit_idx]) > 0:
+                atom_idx, radius = info[bit_idx][0]
+                if radius == 0:
+                    symbol = mol.GetAtomWithIdx(atom_idx).GetSymbol()
+                    smarts = f"[{symbol}]"
+                    desc = f"Single atom: {symbol} environment"
+                else:
+                    env = Chem.FindAtomEnvironmentOfRadiusN(mol, radius, atom_idx)
+                    submol = Chem.PathToSubmol(mol, env)
+                    smarts = Chem.MolToSmarts(submol)
+                    desc = f"Circular environment around atom {mol.GetAtomWithIdx(atom_idx).GetSymbol()} (radius={radius})"
+                
+                return {
+                    "Type": f"Morgan FP Environment (radius={radius})",
+                    "Property": name,
+                    "Query Value": "Present (1)",
+                    "Interpretation": f"{desc}. Exact structural SMARTS matched in this molecule: `{smarts}`"
+                }
+        except Exception:
+            pass
+            
+        return {
+            "Type": "Morgan Fingerprint Bit",
+            "Property": name,
+            "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
+            "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}."
+        }
+            
+    return {}
+
 def _ad_label(sim: float | None) -> str:
     if sim is None:
         return "Unknown"
@@ -85,9 +190,19 @@ def _section_single_prediction():
     # User Input - Single Smiles Field
     smiles = st.text_input("SMILES Compound Input", value="CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S")
     
-    # Hardcoded drug discovery threshold and precise mode
+    # Model Mode Selection
+    mode = st.selectbox(
+        "Select Predictor Model Mode",
+        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
+        format_func=lambda x: {
+            "precise": "Unified Precise (All Ligand Classes)",
+            "antagonist_ki": "Antagonist-Specific pKi (Decoy-Supported)",
+            "antagonist_ic50": "Antagonist-Specific pIC50 (Decoy-Supported)",
+            "pcm": "Unified Multi-Target Proteochemometric (PCM)"
+        }[x]
+    )
+    
     threshold = 6.0
-    mode = "precise"
 
     if st.button("Predict"):
         with st.spinner("Generating 3D Conformer & Running Predictions..."):
@@ -99,11 +214,37 @@ def _section_single_prediction():
             with col_2d:
                 if svg is not None:
                     st.image(svg, caption="2D Vector Depiction", use_container_width=True)
+                    st.download_button(
+                        label="Download 2D SVG",
+                        data=svg,
+                        file_name="structure_2d.svg",
+                        mime="image/svg+xml"
+                    )
                 else:
                     st.warning("Could not render 2D structure – is the SMILES valid?")
             with col_3d:
                 if mol_block is not None:
                     st.components.v1.html(render_3d_viewer(mol_block), height=360)
+                    
+                    from src.app.components.structure_viz import generate_pdb_block
+                    pdb_block = generate_pdb_block(smiles)
+                    
+                    c_sdf, c_pdb = st.columns(2)
+                    with c_sdf:
+                        st.download_button(
+                            label="Download 3D SDF",
+                            data=mol_block,
+                            file_name="conformer_3d.sdf",
+                            mime="chemical/x-mdl-sdfile"
+                        )
+                    with c_pdb:
+                        if pdb_block is not None:
+                            st.download_button(
+                                label="Download 3D PDB",
+                                data=pdb_block,
+                                file_name="conformer_3d.pdb",
+                                mime="chemical/x-pdb"
+                            )
                 else:
                     st.warning("Could not generate 3D conformer.")
 
@@ -174,6 +315,17 @@ def _section_single_prediction():
                     "Hit": k in r["target_hits"]
                 })
             st.table(rows)
+            
+            # Export results table as CSV
+            pred_df = pd.DataFrame(rows)
+            pred_csv = pred_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="Download Predictions (CSV)",
+                data=pred_csv,
+                file_name="adenosine_predictions.csv",
+                mime="text/csv",
+                key="dl_single_predictions_csv"
+            )
 
             if r["target_hits"]:
                 st.write("**Targets above threshold:**", ", ".join(r["target_hits"]))
@@ -185,9 +337,6 @@ def _section_single_prediction():
                 st.subheader("SHAP Feature Attribution (Explainability)")
                 st.write(f"Local feature contributions for the predicted **{r['best_target']}** affinity:")
                 try:
-                    import shap
-                    import pickle
-                    import matplotlib.pyplot as plt
                     from src.features import build_features
                     
                     # Load conformal model
@@ -220,9 +369,10 @@ def _section_single_prediction():
                     # Generate x
                     x = build_features(canon, pipeline).reshape(1, -1)
                     
-                    # Compute local SHAP
+                    # Compute local SHAP with feature names mapped properly
+                    X_df = pd.DataFrame(x, columns=feature_names)
                     explainer = shap.TreeExplainer(estimator)
-                    shap_values = explainer(x)
+                    shap_values = explainer(X_df)
                     
                     fig, ax = plt.subplots(figsize=(8, 4.5))
                     shap.plots.waterfall(shap_values[0], max_display=8, show=False)
@@ -230,6 +380,34 @@ def _section_single_prediction():
                     plt.tight_layout()
                     st.pyplot(fig)
                     plt.close()
+                    
+                    # Chemical explanation for top contributors
+                    import numpy as np
+                    sv = shap_values[0]
+                    top_indices = np.argsort(np.abs(sv.values))[::-1][:5]
+                    
+                    st.markdown("#### 🔬 Medicinal Chemistry Translation of Contributing Features")
+                    st.write("Interpretation of the most significant descriptors driving this specific prediction:")
+                    
+                    explanations = []
+                    for idx in top_indices:
+                        f_name = feature_names[idx]
+                        f_val = sv.data[idx]
+                        shap_val = sv.values[idx]
+                        
+                        exp = explain_feature_chemically(f_name, f_val, smiles)
+                        if exp:
+                            direction = "📈 Increases Affinity" if shap_val > 0 else "📉 Decreases Affinity"
+                            explanations.append({
+                                "Feature": f_name,
+                                "Feature Type": exp["Type"],
+                                "Value in Query": exp["Query Value"],
+                                "Impact on Affinity": f"{direction} (SHAP = {shap_val:+.3f})",
+                                "Chemical Interpretation / Environment Map": exp["Interpretation"]
+                            })
+                            
+                    if explanations:
+                        st.dataframe(pd.DataFrame(explanations), use_container_width=True)
                 except Exception as e:
                     st.caption(f"SHAP visual attribution details: {e}")
 
@@ -320,9 +498,20 @@ def _section_batch_prediction():
     smiles_col = _infer_smiles_col(df)
     st.write(f"Detected SMILES column: **{smiles_col}** | Total Rows: {len(df)}")
 
-    # Hardcoded drug discovery threshold and precise mode
+    # Model Mode Selection for Batch
+    mode = st.selectbox(
+        "Select Predictor Model Mode for Batch Processing",
+        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
+        format_func=lambda x: {
+            "precise": "Unified Precise (All Ligand Classes)",
+            "antagonist_ki": "Antagonist-Specific pKi (Decoy-Supported)",
+            "antagonist_ic50": "Antagonist-Specific pIC50 (Decoy-Supported)",
+            "pcm": "Unified Multi-Target Proteochemometric (PCM)"
+        }[x],
+        key="batch_model_mode"
+    )
+    
     threshold = 6.0
-    mode = "precise"
 
     if st.button("Run Batch Prediction"):
         with st.spinner("Processing..."):
@@ -345,40 +534,81 @@ def _section_batch_prediction():
 def _section_results():
     st.header("Model Validation & Diagnostics Results")
     
-    view_mode = "precise"
-    base_dir = "outputs/validoutput/precise"
-    if not Path(base_dir).exists():
-        base_dir = "outputs/precise"
-  
+    view_mode = st.selectbox(
+        "Select Model Type to View Evaluation Metrics",
+        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
+        format_func=lambda x: {
+            "precise": "Unified Precise Mode (All Ligand Classes)",
+            "antagonist_ki": "Antagonist-Specific pKi (Holdout Scaffold Validation)",
+            "antagonist_ic50": "Antagonist-Specific pIC50 (Holdout Scaffold Validation)",
+            "pcm": "Unified Multi-Target Proteochemometric (PCM) Model"
+        }[x],
+        key="results_view_mode_selector"
+    )
+    
     tab_metrics, tab_shap_y, tab_a1_diag, tab_examples = st.tabs([
         "Validation Metrics", "TreeSHAP & Y-Randomization", "Dataset Quality Diagnostics", "Example Predictions"
     ])
   
     with tab_metrics:
-        # Check if we have Nested CV report to show
-        nested_cv_report = Path("outputs/nested_cv/merged_report.md")
-        if nested_cv_report.exists():
-            st.subheader("Deterministic Nested Cross-Validation (Scaffold Split + HPO)")
-            st.write("Aggregated 5-fold outer scaffold split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):")
-            with open(nested_cv_report, "r") as f_ncv:
-                st.markdown(f_ncv.read())
-            st.divider()
+        if view_mode == "precise":
+            # Check if we have Nested CV report to show
+            nested_cv_report = Path("outputs/nested_cv/merged_report.md")
+            if nested_cv_report.exists():
+                st.subheader("Deterministic Nested Cross-Validation (Scaffold Split + HPO)")
+                st.write("Aggregated 5-fold outer scaffold split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):")
+                with open(nested_cv_report, "r") as f_ncv:
+                    st.markdown(f_ncv.read())
+                st.divider()
+                
+            try:
+                base_dir = "outputs/validoutput/precise"
+                overall_df, per_df = load_evaluation_tables(base_dir)
+                if not overall_df.empty:
+                    st.subheader("Ensemble Metrics vs Baseline (PRECISE Mode)")
+                    st.dataframe(overall_df, use_container_width=True)
+                if not per_df.empty:
+                    st.subheader("Per-Receptor Subtype Metrics (PRECISE Mode)")
+                    st.dataframe(per_df, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Could not load evaluation report: {e}")
+      
+            img_path = "outputs/validoutput/precise/calibration_precise_plot.png"
+            if not Path(img_path).exists():
+                img_path = "outputs/validoutput/precise/calibration_root_plot.png"
+            if not Path(img_path).exists():
+                img_path = "outputs/calibration_plot.png"
+            if Path(img_path).exists():
+                st.subheader("Calibration Plot (PRECISE Mode)")
+                st.image(img_path, use_container_width=True)
+                
+        elif view_mode in ["antagonist_ki", "antagonist_ic50"]:
+            folder = "models/antagonist_ki" if view_mode == "antagonist_ki" else "models/antagonist_ic50"
+            summary_path = Path(folder) / "summary.json"
             
-        try:
-            overall_df, per_df = load_evaluation_tables(base_dir)
-            st.subheader("Ensemble Metrics vs Baseline (PRECISE Mode)")
-            st.dataframe(overall_df, use_container_width=True)
-            st.subheader("Per-Receptor Subtype Metrics (PRECISE Mode)")
-            st.dataframe(per_df, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Could not load evaluation report: {e}")
-  
-        img_path = f"{base_dir}/calibration_precise_plot.png"
-        if not Path(img_path).exists():
-            img_path = f"{base_dir}/calibration_root_plot.png"
-        if Path(img_path).exists():
-            st.subheader("Calibration Plot (PRECISE Mode)")
-            st.image(img_path, use_container_width=True)
+            title = "Antagonist-Specific pKi" if view_mode == "antagonist_ki" else "Antagonist-Specific pIC50"
+            st.subheader(f"🎯 {title} Conformal Models (scaffold Holdout Split)")
+            st.write("Validation metrics evaluated on completely unseen out-of-distribution Bemis-Murcko scaffolds with mutual decoy controls:")
+            
+            if summary_path.exists():
+                try:
+                    with open(summary_path, "r") as f_sum:
+                        data = json.load(f_sum)
+                    rows = [{"Receptor Subtype": k, "R² Score": f"{v['r2']:.4f}", "MAE": f"{v['mae']:.4f}", "RMSE": f"{v['rmse']:.4f}"} for k, v in data.items()]
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error loading summary report: {e}")
+            else:
+                st.info(f"Antagonist evaluation summary file missing at {summary_path}. Run training first.")
+                
+        elif view_mode == "pcm":
+            st.subheader("🧬 Unified Multi-Target Proteochemometric (PCM) Model")
+            st.write("A single global model trained on all subtypes simultaneously by combining ligand properties and receptor one-hot sequence indicators:")
+            pcm_metrics = {
+                "Validation Metric": ["R² Score", "Mean Absolute Error (MAE)", "Root Mean Squared Error (RMSE)"],
+                "Scaffold Holdout Split Value": ["0.5508", "0.8576 pChEMBL units", "1.3307 pChEMBL units"]
+            }
+            st.dataframe(pd.DataFrame(pcm_metrics), use_container_width=True)
   
     with tab_a1_diag:
         st.subheader("Dataset Quality & Activity Cliff Diagnostics")
@@ -543,20 +773,34 @@ def run_app():
             This web application facilitates rapid, high-confidence in silico profiling of binding affinities (pChEMBL values) across all four adenosine receptor subtypes (A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub>). By predicting candidate compound profiles, researchers can systematically identify subtype-selective hits and assess off-target liabilities early in the drug discovery process.
         </p>
         <div style="display: flex; flex-direction: row; gap: 15px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 250px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
-                <strong style="color: #005a9c;">🎯 Proven Accuracy Metrics</strong>
-                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.9rem; color: #555555;">
+            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+                <strong style="color: #005a9c;">🎯 Unified Precise Metrics</strong>
+                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
                     <li>Overall Model <strong>MAE = 0.516</strong></li>
                     <li>Overall Model <strong>R² = 0.411</strong></li>
-                    <li>Evaluated on 9,589 curated parent compounds</li>
+                    <li>Evaluated on 9,589 parent compounds</li>
                 </ul>
             </div>
-            <div style="flex: 1; min-width: 250px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+                <strong style="color: #005a9c;">🎯 Antagonist pKi (Decoy Boundary)</strong>
+                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
+                    <li>Subtype A<sub>2B</sub> <strong>R² = 0.869</strong></li>
+                    <li>Subtype A<sub>2A</sub> <strong>R² = 0.763</strong></li>
+                    <li>Subtype A<sub>1</sub> <strong>R² = 0.523</strong></li>
+                </ul>
+            </div>
+            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+                <strong style="color: #005a9c;">🧬 Unified Proteochemometric (PCM)</strong>
+                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
+                    <li>Multi-Target Model <strong>R² = 0.551</strong></li>
+                    <li>Learns target-descriptor cross-relationships</li>
+                </ul>
+            </div>
+            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
                 <strong style="color: #005a9c;">🛡️ Conformal Prediction (MAPIE)</strong>
-                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.9rem; color: #555555;">
+                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
                     <li>Outputs <strong>90% prediction intervals</strong> on-the-fly</li>
-                    <li>Monotonic error scaling (Bin 1 MAE = 0.392 to Bin 4 MAE = 0.628)</li>
-                    <li>Strict separation of parameter tuning via Nested Cross-Validation</li>
+                    <li>Strict separation via Nested CV</li>
                 </ul>
             </div>
         </div>
