@@ -10,15 +10,22 @@ from src.features import build_features, _descriptors
 
 SUBTYPES = ["A1", "A2A", "A2B", "A3"]
 
-@lru_cache(maxsize=2)
-def _load_scaler(mode: str = "standard"):
-    path = Path("models") / mode / f"scaler_{mode}.pkl"
+@lru_cache(maxsize=4)
+def _load_scaler(mode: str = "precise"):
+    if mode == "antagonist_ki":
+        path = Path("models/antagonist_ki/scaler_antagonist_ki.pkl")
+    elif mode == "antagonist_ic50":
+        path = Path("models/antagonist_ic50/scaler_antagonist_ic50.pkl")
+    elif mode == "pcm":
+        path = Path("models/pcm/scaler_pcm.pkl")
+    else:
+        path = Path("models/precise/scaler_precise.pkl")
+        if not path.exists():
+            path = Path("models/scaler.pkl")
+            
     if not path.exists():
-        path = Path("models") / f"scaler_{mode}.pkl"
-    if not path.exists():
-        path = Path("models") / mode / "scaler.pkl"
-    if not path.exists():
-        path = Path("models") / "scaler.pkl"
+        raise FileNotFoundError(f"Scaler pipeline NOT found at {path} for mode {mode}")
+        
     with open(path, "rb") as f:
         return pickle.load(f)
 
@@ -27,15 +34,21 @@ def _load_db_lookup():
     p = Path("data/processed/db_lookup.json")
     return json.load(open(p, "r")) if p.exists() else {}
 
-@lru_cache(maxsize=2)
-def _load_models(mode: str = "standard"):
+@lru_cache(maxsize=4)
+def _load_models(mode: str = "precise"):
+    if mode == "pcm":
+        path = Path("models/pcm/xgboost_pcm_model.pkl")
+        if not path.exists():
+            raise FileNotFoundError(f"Unified PCM model NOT found at {path}")
+        with open(path, "rb") as f:
+            return pickle.load(f)
+            
     models = {}
-    # 1. Try the mode-specific subfolder (standard/strict)
     model_dir = Path("models") / mode
     
-    # 2. Fallback: If the subfolder doesn't exist, use the root models folder
     if not model_dir.exists():
-        print(f"WARNING: {model_dir} not found. Falling back to root 'models/' directory.")
+        model_dir = Path("models/precise")
+    if not model_dir.exists():
         model_dir = Path("models")
 
     for st in SUBTYPES:
@@ -43,7 +56,7 @@ def _load_models(mode: str = "standard"):
         if not filename.exists():
             filename = model_dir / f"xgboost_{st.lower()}_model.pkl"
         if not filename.exists():
-            filename = Path("models") / f"xgboost_{mode}_{st.lower()}_model.pkl"
+            filename = Path("models/precise") / f"xgboost_precise_{st.lower()}_model.pkl"
         if not filename.exists():
             filename = Path("models") / f"xgboost_{st.lower()}_model.pkl"
         
@@ -135,14 +148,29 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
         source = "database"
     else:
         x = build_features(canon, scaler)
-        for st in SUBTYPES:
-            m, s, low, high = _ensemble_predict(models[st], x)
-            preds[st], unc[st] = m, s
-            intervals[st] = {
-                "lower": round(low, 3), 
-                "upper": round(high, 3), 
-                "width": round(high - low, 3)
-            }
+        if mode == "pcm":
+            idx_map = {st: i for i, st in enumerate(SUBTYPES)}
+            for st in SUBTYPES:
+                one_hot = np.zeros((len(SUBTYPES),), dtype=np.float32)
+                one_hot[idx_map[st]] = 1.0
+                x_pcm = np.hstack([x, one_hot]).reshape(1, -1)
+                
+                m, s, low, high = _ensemble_predict(models, x_pcm)
+                preds[st], unc[st] = m, s
+                intervals[st] = {
+                    "lower": round(low, 3), 
+                    "upper": round(high, 3), 
+                    "width": round(high - low, 3)
+                }
+        else:
+            for st in SUBTYPES:
+                m, s, low, high = _ensemble_predict(models[st], x)
+                preds[st], unc[st] = m, s
+                intervals[st] = {
+                    "lower": round(low, 3), 
+                    "upper": round(high, 3), 
+                    "width": round(high - low, 3)
+                }
         source = "model"
 
     # 3. Direct Selectivity Predictions

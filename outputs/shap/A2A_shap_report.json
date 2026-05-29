@@ -5,59 +5,58 @@
     {
       "rank": 1,
       "feature": "Morgan_FP_964",
-      "mean_abs_shap": 0.09733466058969498
+      "mean_abs_shap": 0.07305653393268585
     },
     {
       "rank": 2,
-      "feature": "MolLogP",
-      "mean_abs_shap": 0.0714627131819725
+      "feature": "PEOE_VSA11",
+      "mean_abs_shap": 0.06936965137720108
     },
     {
       "rank": 3,
-      "feature": "PEOE_VSA11",
-      "mean_abs_shap": 0.04881889745593071
+      "feature": "SMR_VSA3",
+      "mean_abs_shap": 0.06146103888750076
     },
     {
       "rank": 4,
-      "feature": "SMR_VSA3",
-      "mean_abs_shap": 0.04869059473276138
+      "feature": "MolLogP",
+      "mean_abs_shap": 0.04593195393681526
     },
     {
       "rank": 5,
-      "feature": "Morgan_FP_1457",
-      "mean_abs_shap": 0.04744711518287659
+      "feature": "Morgan_FP_1698",
+      "mean_abs_shap": 0.033762093633413315
     },
     {
       "rank": 6,
       "feature": "fr_NH0",
-      "mean_abs_shap": 0.04336399957537651
+      "mean_abs_shap": 0.03234477341175079
     },
     {
       "rank": 7,
-      "feature": "SMR_VSA9",
-      "mean_abs_shap": 0.03446699306368828
+      "feature": "VSA_EState3",
+      "mean_abs_shap": 0.03065592609345913
     },
     {
       "rank": 8,
-      "feature": "MaxAbsEStateIndex",
-      "mean_abs_shap": 0.03129143640398979
+      "feature": "SlogP_VSA3",
+      "mean_abs_shap": 0.029835844412446022
     },
     {
       "rank": 9,
-      "feature": "TPSA",
-      "mean_abs_shap": 0.03102187253534794
+      "feature": "Morgan_FP_1457",
+      "mean_abs_shap": 0.026992376893758774
     },
     {
       "rank": 10,
-      "feature": "PEOE_VSA10",
-      "mean_abs_shap": 0.029947513714432716
+      "feature": "Morgan_FP_1153",
+      "mean_abs_shap": 0.026767905801534653
     }
   ],
   "sanity_check": {
     "status": "PASS",
     "message": "Top features are dominated by structurally relevant physicochemical properties.",
     "expected_features_found": [
-      "TPSA",
       "LogP"
     ]
   }

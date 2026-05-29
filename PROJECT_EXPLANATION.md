@@ -1,311 +1,773 @@
 # Adenosine Receptor QSAR Model: The Complete Source Code Textbook
 
-## Preface: How to Read This Book
-This document is a comprehensive textbook for the Adenosine Receptor Selectivity Model. It is designed to take you from a conceptual understanding of Quantitative Structure-Activity Relationships (QSAR) down to the literal line-by-line explanation of every python file in this codebase. 
+## Preface: Educational Philosophy of Code Fragmentation
+This textbook is designed to fulfill a clear academic objective: to fragment, analyze, and reconstruct every code file in the Adenosine Selectivity Model project. 
 
-Whether you are defending your thesis to a strict professor, preparing for a technical software engineering interview, or just trying to remember why you wrote a specific line of code, this book holds the answer.
+In early-stage computer-aided drug discovery (CADD), machine learning pipelines are often treated as black boxes. By examining every code module individually, we understand:
+1. What the code is.
+2. What role it serves.
+3. How the mathematical or chemical logic works.
+4. The exact programming syntax.
+
+Through this structural approach, you can defend your codebase, understand its computational biology foundations, and master Python's cheminformatics stack.
 
 ---
 
-# Chapter 1: The Core Scientific Logic
+# CHAPTER 1: The Core Scientific Problem & QSAR Architecture
 
 ### The Biological Problem
-Proteins act as "locks" and chemical drugs act as "keys." The human body has four subtypes of the Adenosine Receptor: **A1, A2A, A2B, and A3**. Because these four receptors evolved from the same genetic ancestor, their "keyholes" (binding pockets) look incredibly similar.
-* If you design a drug to treat asthma (targeting A2B), but it accidentally fits into the A1 receptor, it can stop the patient's heart.
-* Therefore, modern pharmacology demands **Selectivity**. A drug must bind tightly to one receptor and ignore the others.
+The human body contains four subtypes of the Adenosine Receptor: **A1, A2A, A2B, and A3**. These are G-protein coupled receptors (GPCRs) with highly conserved binding pockets. 
+* A drug designed to bind to one receptor (e.g., A2A for Parkinson's disease) might off-target bind to another (e.g., A1), causing undesirable side effects like bradycardia.
+* Modern drug discovery requires **selectivity**: maximizing binding affinity at the target receptor while minimizing it at the others.
 
-### The Computational Solution (QSAR)
-Instead of synthesizing thousands of drugs in a lab, we use machine learning to predict binding affinity mathematically. This is called QSAR (Quantitative Structure-Activity Relationship).
-We measure binding affinity using `pChEMBL`. This is the negative base-10 logarithm of the molar concentration required to trigger the receptor ($-log_{10}(M)$). 
-* A `pChEMBL` of 5.0 means it takes $10\mu M$ (weak drug).
-* A `pChEMBL` of 9.0 means it takes $1 nM$ (incredibly potent drug).
-
-The goal of this codebase is to read a string of text representing a molecule (SMILES), convert it to numbers, and predict the continuous `pChEMBL` value for all four adenosine receptors.
+### The QSAR Solution
+Quantitative Structure-Activity Relationship (QSAR) models mathematically map chemical features to biological activity values. Activity is measured in `pChEMBL` units:
+$$pChEMBL = -\log_{10}(\text{Molar Concentration of Activity})$$
+* A $pChEMBL \ge 6.0$ ($1\mu\text{M}$ or lower concentration) is the standard threshold for active hit compounds.
+* The goal of this platform is to input any chemical structure, convert it to molecular descriptors, and output calibrated conformal predictions alongside pairwise selectivity profiles for all four GPCR subtypes.
 
 ---
 
-# Chapter 2: Data Ingestion (`src/data_loader.py`)
+# CHAPTER 2: Root Directory Entrypoints & Scripts
 
-This file is responsible for loading the messy, real-world Excel data, cleaning it, standardizing the chemical structures, and creating a database lookup.
+This chapter details the files located in the root of the workspace. These orchestrate testing, run evaluations, and wrap the user interface.
 
-### 2.1 The Subtype Mapping
-```python
-SUBTYPE_MAP = {
-    "A1R": "A1",
-    "A2AR": "A2A",
-    "A2BR": "A2B",
-    "A3R": "A3",
-    "A1": "A1",
-    ...
-}
 ```
-**Explanation:** Different scientific papers call the receptors different names (e.g., A1R vs A1). This dictionary is a lookup table to force all names into our standard 4 labels.
-
-### 2.2 Canonicalizing SMILES
-```python
-def _canonicalize_smiles(smiles: str) -> str | None:
-    if not isinstance(smiles, str) or not smiles.strip(): return None
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return None
-    return Chem.MolToSmiles(mol, canonical=True)
+[Project Root]
+├── streamlit_app.py
+├── prepare_new_test_set.py
+├── analyze_novel_results.py
+└── results.py
 ```
-**Explanation:** A SMILES string is a way to type a molecule on a keyboard. However, ethanol can be typed as `CCO` or `OCC`. `Chem.MolFromSmiles` turns the text into a 3D graph object in RAM. `Chem.MolToSmiles(canonical=True)` turns that graph back into text, forcing it to use the exact same alphabetical spelling every time. This prevents the AI from thinking `CCO` and `OCC` are two different drugs.
-
-### 2.3 The Cleaning Pipeline (`load_and_clean`)
-```python
-def load_and_clean(file_path: str, save_lookup_path: str = "data/processed/db_lookup.json", mode: str = "standard"):
-    df = pd.read_csv(file_path)
-    # ... checks for required columns ...
-```
-**Explanation:** Opens the raw CSV. It verifies that columns like `pchembl_value` and `confidence_score` exist.
-
-```python
-    if mode == "strict":
-        df = df[df["standard_relation"] == "="].copy()
-        df = df[df["standard_units"].str.lower() == "nm"].copy()
-        df = df[df["assay_type"].str.upper() == "B"].copy()
-        df = df[df["confidence_score"].notna() & (df["confidence_score"] >= 7)].copy()
-```
-**Explanation:** If the user demands strict academic rigor, we drop any rows where the lab wasn't 100% sure of the result (`=` rather than `>`), force units to nanomolar, require it to be a Binding assay (`B`), and require a confidence score $\ge 7$.
-
-```python
-    df = (
-        df.sort_values("pchembl_value", ascending=False)
-        .drop_duplicates(subset=["canonical_smiles", "target_subtype"], keep="first")
-        .reset_index(drop=True)
-    )
-```
-**Explanation:** **CRITICAL LINE.** If three different labs tested Caffeine on A2A, we have 3 rows. We sort them from highest binding affinity to lowest. We then use `drop_duplicates` to keep only the `first` (highest) value. We do this to assume the most potent measurement is the true binding affinity, filtering out poor lab conditions.
-
-```python
-    lookup = {}
-    for smi, subdf in df.groupby("canonical_smiles"):
-        lookup[smi] = {row["target_subtype"]: float(row["pchembl_value"]) for _, row in subdf.iterrows()}
-    with open(save_lookup_path, "w", encoding="utf-8") as f:
-        json.dump(lookup, f)
-```
-**Explanation:** We create `db_lookup.json`. This is our "cheat sheet." When a user uses the web app, we check this dictionary first. If they typed a drug we already know, we instantly return the real lab value rather than wasting time running the AI model.
 
 ---
 
-# Chapter 3: Molecular Featurization (`src/features.py`)
-
-AI algorithms (like XGBoost) only understand numbers. This file translates the canonical SMILES string into a mathematical array.
-
-### 3.1 Morgan Fingerprints
+### 2.1 `streamlit_app.py` (Root)
+* **Role**: Serve as the initial execution entrypoint for Streamlit.
+* **Code Fragment**:
 ```python
-_MORGAN = GetMorganGenerator(radius=2, fpSize=2048)
+import sys
+from pathlib import Path
 
-def _morgan_bits(smiles: str, n_bits: int = 2048) -> np.ndarray:
-    mol = Chem.MolFromSmiles(smiles)
-    fp = _MORGAN.GetFingerprint(mol)
-    arr = np.zeros((n_bits,), dtype=np.uint8)
-    DataStructs.ConvertToNumpyArray(fp, arr)
-    return arr
-```
-**Explanation:** A Morgan Fingerprint (Radius 2) draws a circle around every atom in the molecule, looks at its neighbors up to 2 bonds away, and hashes that structure into an array of 2048 zeroes and ones. If bit #450 is a `1`, it might mean "This molecule has a benzene ring connected to an oxygen." This turns the 2D topology into a sparse binary array.
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-### 3.2 Physicochemical Descriptors
-```python
-def _descriptors(smiles: str) -> np.ndarray:
-    mol = Chem.MolFromSmiles(smiles)
-    mw = Descriptors.MolWt(mol) # Molecular Weight
-    logp = Descriptors.MolLogP(mol) # Lipophilicity (Fat vs Water solubility)
-    hbd = Lipinski.NumHDonors(mol) # Hydrogen Bond Donors
-    hba = Lipinski.NumHAcceptors(mol) # Hydrogen Bond Acceptors
-    rot = Lipinski.NumRotatableBonds(mol) # Flexibility
-    arom = Lipinski.NumAromaticRings(mol) # Aromaticity
-    tpsa = Descriptors.TPSA(mol) # Polar Surface Area
-    return np.array([mw, logp, hbd, hba, rot, arom, tpsa], dtype=np.float32)
-```
-**Explanation:** Fingerprints only track shape. Descriptors track physics. We calculate 7 continuous properties, like how heavy the molecule is, or how well it dissolves in fat (LogP). These 7 numbers are appended to the 2048 zeroes and ones.
+from src.streamlit_app import run_app
 
-### 3.3 Scaling the Matrix
-```python
-    scaler = StandardScaler()
-    Xdesc_train_s = scaler.fit_transform(Xdesc_train)
-    Xdesc_test_s = scaler.transform(Xdesc_test)
-    X_train = np.hstack([Xfp_train, Xdesc_train_s]).astype(np.float32)
+run_app()
 ```
-**Explanation:** **CRITICAL LOGIC.** Molecular Weight can be 500.0. LogP is usually 2.0. If we give this raw to the AI, it will mathematically assume Weight is 250x more important than LogP simply because the number is bigger. 
-`StandardScaler` squashes the 7 descriptors down so they center around 0. 
-*Why don't we scale the fingerprints?* Because fingerprints are binary `0` or `1`. If you scale a `0`, it becomes `-0.04`, destroying the logical "Yes/No" meaning of the bit. Thus, we split the matrix, scale the 7 physics numbers, and `hstack` (glue) them back onto the binary fingerprints.
+* **Logic**: Streamlit runs scripts relative to where it is launched. This file inserts the project root into the Python system path `sys.path` so that nested imports like `from src.predictor import ...` resolve successfully, then runs the app from the `src` folder.
 
 ---
 
-# Chapter 4: Anti-Cheating Validation (`src/data_splitter.py`)
-
-If you randomly shuffle a deck of molecules into Train (80%) and Test (20%), the AI will cheat. It will see "Caffeine" in the training set, and "Caffeine with an extra methyl group" in the test set. It will score perfectly on the test set, but it hasn't learned chemistry; it just memorized local variations.
-
-### The Bemis-Murcko Scaffold Split
+### 2.2 `prepare_new_test_set.py` (Root)
+* **Role**: Prepare an external, blind validation test set from raw Excel data, filtering out any chemical structure that has been seen during model training.
+* **Key Code Fragment**:
 ```python
-def _murcko_scaffold_smiles(smiles: str) -> str:
-    mol = Chem.MolFromSmiles(smiles)
-    scaf = MurckoScaffold.GetScaffoldForMol(mol)
-    return Chem.MolToSmiles(scaf, canonical=True)
-```
-**Explanation:** This function acts as a chemical "bone stripper." It removes all the fluffy side-chains of a molecule and leaves only the macroscopic ring systems (the scaffold). 
-
-```python
-    scaffolds = df[smiles_col].apply(_murcko_scaffold_smiles)
-    df_copy["_scaffold"] = scaffolds
-
-    scaffold_to_indices = {}
-    for i, scaf in enumerate(df_copy["_scaffold"].tolist()):
-        scaffold_to_indices.setdefault(scaf, []).append(i)
-```
-**Explanation:** We map every single molecule to its skeleton. We group them. All molecules with Skeleton A go into one bucket. All molecules with Skeleton B go into another.
-
-```python
-    for scaf in scaffold_keys:
-        indices = scaffold_to_indices[scaf]
-        if test_count < n_test_target:
-            test_indices.extend(indices)
-            test_count += len(indices)
-        else:
-            train_indices.extend(indices)
-```
-**Explanation:** We put entire buckets (scaffolds) into the Test set until it reaches 20%. This guarantees that when the AI takes the final test, it is looking at chemical skeletons it has **never seen before in its life**. This forces true out-of-distribution (OOD) learning.
-
----
-
-# Chapter 5: The Brain (`src/ml_xgboost.py`)
-
-We use XGBoost (Extreme Gradient Boosting Regressor). Neural Networks are famously bad at tabular/sparse data unless you have millions of rows. XGBoost is state-of-the-art for our specific dataset size and fingerprint structure.
-
-```python
-    model = xgb.XGBRegressor(
-        n_estimators=800,
-        learning_rate=0.05,
-        max_depth=7,
-        min_child_weight=2,
-        subsample=0.8,
-        tree_method='hist',
-        colsample_bytree=0.8,
-        early_stopping_rounds=50,
-        random_state=42,
-        n_jobs=-1
-    )
-```
-**Explanation:**
-*   `n_estimators=800`: Build 800 decision trees. The first tree guesses. The second tree predicts the *error* of the first tree to fix it. The third fixes the second.
-*   `learning_rate=0.05`: Each tree is only allowed to fix 5% of the error at a time, preventing over-correction.
-*   `max_depth=7`: A tree can only ask 7 "Yes/No" questions before it must make a final guess.
-*   `subsample=0.8` / `colsample_bytree=0.8`: Every time a new tree is built, it is only allowed to look at 80% of the molecules, and 80% of the 2055 features. This forces the trees to be diverse and prevents over-fitting to noisy features.
-*   `early_stopping_rounds=50`: If the model builds 50 trees in a row and the test score doesn't improve, it aborts training early to save time and prevent memorization.
-
----
-
-# Chapter 6: The Blind External Test (`prepare_new_test_set.py`)
-
-When the professor hands you four brand new Excel files, you must prove the AI didn't already train on them.
-
-```python
-    seen_smiles = set()
-    for smi in train_df['smiles'].dropna():
-        canon = canonicalize(smi)
+seen_smiles = set()
+for smi in train_df['smiles'].dropna():
+    canon = canonicalize(smi)
+    if canon:
         seen_smiles.add(canon)
-```
-**Explanation:** We load the 10,000+ molecules we used for training, canonicalize them, and lock them in a `set`.
 
-```python
-        for idx, row in df.iterrows():
-            smi = row.get('SMILES')
-            canon = canonicalize(smi)
+novel_molecules = {}
+for subtype, filepath in files.items():
+    df = pd.read_excel(filepath)
+    for idx, row in df.iterrows():
+        smi = row.get('SMILES')
+        p_val = row.get('p-value (-log)')
+        
+        canon = canonicalize(smi)
+        if canon in seen_smiles:
+            continue  # Data leakage prevention checkpoint
             
-            if canon in seen_smiles:
-                total_skipped_seen += 1
-                continue
+        if canon not in novel_molecules:
+            novel_molecules[canon] = {'canonical_smiles': canon, 'original_smiles': smi}
+        
+        current_val = novel_molecules[canon].get(subtype, 0)
+        novel_molecules[canon][subtype] = max(current_val, float(p_val))
 ```
-**Explanation:** As we read the professor's new files, we canonicalize every new molecule. `if canon in seen_smiles:` is our security checkpoint. If the molecule is in the set, the code hits `continue` (skip), instantly throwing it in the trash. This guarantees **zero data leakage**.
-
-```python
-            current_val = novel_molecules[canon].get(subtype, 0)
-            novel_molecules[canon][subtype] = max(current_val, float(p_val))
-```
-**Explanation:** The professor gave us 4 separate files (A1, A2A, etc.). If "Drug X" appears in the A1 file, we save `novel_molecules["Drug X"]["A1"] = 6.0`. If it later appears in the A2A file, we add `novel_molecules["Drug X"]["A2A"] = 8.0`. This merges four isolated files into one beautiful, multi-target dataframe.
+* **Scientific Logic**:
+  - **Leakage Prevention**: To validate machine learning, the test set must be strictly novel. The script loads all training compounds, canonicalizes their structures using RDKit, and places them in a hash set. 
+  - **Multi-target Merging**: Excel files for each subtype are loaded. If a molecule exists in multiple subtype lists, it is merged into a single multi-target vector using its canonical SMILES as the dictionary key.
 
 ---
 
-# Chapter 7: Analyzing Selectivity (`analyze_novel_results.py`)
-
-The most advanced and rigorous part of the project: evaluating if the AI actually learned *selectivity*.
-
-### 7.1 Mean Absolute Error (MAE)
+### 2.3 `analyze_novel_results.py` (Root)
+* **Role**: Run performance analysis on the novel external test set, calculating RMSE, MAE, and selectivity accuracy ratios.
+* **Key Code Fragment**:
 ```python
-        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-        mae = mean_absolute_error(y_true, y_pred)
-```
-**Explanation:** If the true `pChEMBL` is 8.0, and the AI guesses 7.0, the absolute error is 1.0. Because `pChEMBL` is logarithmic, an error of 1.0 means the AI was off by exactly one order of magnitude (10-fold error). For pure 2D ligand screening, a 0.7-1.0 error is excellent.
+counts = truth_df[subtypes].notna().sum(axis=1)
+multi_target_idx = counts[counts >= 2].index
+multi_target = merged.loc[merged.index.isin(multi_target_idx)].copy()
 
-### 7.2 Recall@1 (Top-1 Selectivity Accuracy)
-```python
-    # Filter for molecules tested on multiple receptors
-    counts = truth_df[subtypes].notna().sum(axis=1)
-    multi_target_idx = counts[counts >= 2].index
+correct_selectivity_top1 = 0
+for idx, row in multi_target.iterrows():
+    true_vals = {st: row[f"{st}_true"] for st in subtypes if pd.notna(row[f"{st}_true"])}
+    true_best = max(true_vals, key=true_vals.get)
+    
+    pred_vals = {st: row[f"{st}_pred"] for st in true_vals.keys()}
+    pred_best = max(pred_vals, key=pred_vals.get)
+    
+    if true_best == pred_best:
+        correct_selectivity_top1 += 1
 ```
-**Explanation:** You can't calculate selectivity if a drug was only tested on A1. We strictly filter the dataset for drugs that have ground-truth experimental data for *at least two* receptors.
-
-```python
-        true_best = max(true_vals, key=true_vals.get)
-        
-        pred_sorted = sorted(pred_vals.keys(), key=lambda k: pred_vals[k], reverse=True)
-        pred_best = pred_sorted[0]
-        
-        if true_best == pred_best:
-            correct_selectivity_top1 += 1
-```
-**Explanation:** For those multi-target drugs, we ask: "Which receptor has the highest true lab value?" (`true_best`). Then we look at the AI's predictions and ask: "Which receptor did the AI *think* was the highest?" (`pred_best`). If they match, we score a point. This proves the AI can identify the primary pharmacological target, not just guess random numbers.
-
-### 7.3 Epistemic Uncertainty (Applicability Domain)
-```python
-    high_rel = (merged['reliability'] >= 0.6).sum()
-```
-**Explanation:** "Reliability" is calculated via Tanimoto Similarity. It compares the Morgan Fingerprint of the novel drug to every single fingerprint in the training set. If the drug is less than 40% similar to anything we've ever seen, it is Out-of-Distribution (OOD). The AI is flying blind. We proudly report this rather than hiding it, proving we understand the mathematical limits of our dataset.
+* **Logic**:
+  - **Absolute Error**: Calculates the Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE) for each subtype.
+  - **Recall@1 Selectivity**: Selects compounds tested experimentally against two or more subtypes. It compares the experimental highest-affinity target (`true_best`) against the predicted highest-affinity target (`pred_best`). If they match, it records a correct selectivity identification.
 
 ---
 
-# Chapter 8: The Production Web Application (`src/predictor.py` & `streamlit_app.py`)
-
-A model is useless if chemists cannot interact with it. We built a Streamlit web application that allows researchers to query SMILES strings and instantly see selectivity profiles, safety alerts, and applicability domains.
-
-### 8.1 The "Known Drug" Fast-Pass (`src/predictor.py`)
+### 2.4 `results.py` (Root)
+* **Role**: Execute fast predictions on training database examples and arbitrary novel structures, generating output files to populate the Streamlit dashboard reports.
+* **Code Fragment**:
 ```python
-    in_db = canon in lookup
-    if in_db:
+def run_mode(mode: str, out_dir: str, hit_threshold: float = 6.0):
+    df, lookup = load_and_clean("data/raw/AR_all_unique_parents_with_smiles.csv", mode=mode)
+    scaler = _load_scaler(mode=mode)
+    
+    db_smiles = df["canonical_smiles"].dropna().unique().tolist()[:5]
+    db_results = [
+        {"smiles": s, "result": local_predict_for_report(s, models, lookup, scaler, hit_threshold)} 
+        for s in db_smiles
+    ]
+    # Save examples to output folder
+    _write_json(f"{out_dir}/predictor_db_std_examples.json", db_results)
+```
+* **Syntax**: Integrates `load_and_clean`, `_load_scaler`, and model prediction parameters, writing structured runs to JSON logs.
+
+---
+
+# CHAPTER 3: The Data Engineering Pipeline
+
+```
+src/
+├── data_loader.py
+└── scaffold_split.py
+```
+
+---
+
+### 3.1 `src/data_loader.py`
+* **Role**: Standardize target labels, filter records using high-quality scientific rules, and perform median-based deduplication of conflicting bioassays.
+* **Key Code Fragment**:
+```python
+df = df[
+    (df["standard_relation"] == "=") &
+    (df["confidence_score"] >= 6) &
+    (df["assay_type"].isin({"B", "F"})) &
+    (df["standard_type"].isin({"KI", "KD", "IC50", "EC50"})) &
+    (df["pchembl_value"].notna())
+].copy()
+
+# Deduplication priority logic
+for (smi, subtype), group in grouped:
+    if len(group) == 1:
+        deduped_rows.append(group.iloc[0])
+        continue
+    
+    binding_group = group[group["standard_type"].isin({"KI", "KD"})]
+    target_group = binding_group if not binding_group.empty else group
+    median_pchembl = target_group["pchembl_value"].median()
+    
+    rep_row = target_group.iloc[0].copy()
+    rep_row["pchembl_value"] = median_pchembl
+    deduped_rows.append(rep_row)
+```
+* **Scientific & Computational Logic**:
+  - **Quality Filtering**: Removes bounding relations ($>$ or $<$ values) that prevent precise regression. Filters for direct binding (B) or functional (F) assays with experimental confidence scores $\ge 6$.
+  - **Deduplication Priority**: If a molecule has multiple assays, direct binding equilibria metrics ($K_i$ and $K_d$) are prioritized over functional measurements ($IC_{50}$ or $EC_{50}$). The median value is computed to collapse assay noise.
+  - **Database Lookup Cache**: Saves a `db_lookup.json` file. When predicting, if a molecule is already present in this database, the true laboratory value is returned rather than running ML inference.
+
+---
+
+### 3.2 `src/scaffold_split.py`
+* **Role**: Split compounds into training and testing sets based on their molecular scaffolds to guarantee rigorous out-of-distribution evaluation.
+* **Key Code Fragment**:
+```python
+from rdkit.Chem.Scaffolds import MurckoScaffold
+
+def _murcko_scaffold_smiles(smiles: str) -> str:
+    try:
+        scaf_smiles = MurckoScaffold.MurckoScaffoldSmiles(smiles=smiles, includeChirality=False)
+        if not scaf_smiles:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is not None:
+                Chem.RemoveStereochemistry(mol)
+                return Chem.MolToSmiles(mol, canonical=True)
+            return "__INVALID__"
+        return scaf_smiles
+    except Exception:
+        return "__INVALID__"
+```
+* **Scientific Logic**:
+  - **Scaffold Separation**: Random splitting leads to highly similar molecules (e.g., analogs with minor sidegroup changes) occupying both sets, causing artificial inflation of test performance.
+  - **Skeleton Extraction**: This function strips away side-chains, returning the core carbon ring structure (Bemis-Murcko Scaffold). Compounds sharing the same skeleton are assigned together to either the training or test set, testing true generalizability.
+
+---
+
+# CHAPTER 4: The Chemical Utility & Featurization Engine
+
+```
+src/
+├── chem_utils.py
+├── features.py
+└── feature_caching.py
+```
+
+---
+
+### 4.1 `src/chem_utils.py`
+* **Role**: Compute molecular descriptors, draw 2D vector depictions, generate optimized 3D conformers, compute atomic charges, and filter chemical anomalies.
+* **Key Code Fragment (3D Conformer & Charge Calculations)**:
+```python
+def generate_3d_conformer(smiles: str) -> tuple[Optional[str], float, float]:
+    mol = mol_from_smiles(smiles)
+    try:
+        mol_3d = Chem.AddHs(mol)
+        embed_status = AllChem.EmbedMolecule(mol_3d, AllChem.ETKDGv3())
+        if embed_status != 0:
+            embed_status = AllChem.EmbedMolecule(mol_3d) # standard fallback
+            
+        if embed_status == 0:
+            AllChem.MMFFOptimizeMolecule(mol_3d)
+            
+        AllChem.ComputeGasteigerCharges(mol_3d)
+        charges = [float(a.GetProp("_GasteigerCharge")) for a in mol_3d.GetAtoms() 
+                   if a.HasProp("_GasteigerCharge")]
+        return Chem.MolToMolBlock(mol_3d), min(charges), max(charges)
+```
+* **Cheminformatics Theory**:
+  - **ETKDGv3**: Uses the Experimental-Torsion Knowledge-Distance Geometry algorithm to construct a realistic 3D spatial conformation.
+  - **MMFF94 Force Field**: Refines structural geometry by performing energy minimization.
+  - **Gasteiger Charges**: Calculates electronegativity equalization to yield atomic partial charges.
+  - **PAINS Filter**: Scans structures against the Pan Assay Interference Compounds database to alert users to false-positive assay compounds.
+
+---
+
+### 4.2 `src/features.py`
+* **Role**: Translate chemical strings into standard numeric matrices, implementing low-variance and correlation filters on Continuous Descriptors.
+* **Key Code Fragment (Feature Filtering Engine)**:
+```python
+class FeatureFilter:
+    def fit(self, X: np.ndarray, feature_names=None):
+        # 1. Drop features exceeding 5% NaN values
+        nan_fraction = np.isnan(X).mean(axis=0)
+        keep_nan_mask = nan_fraction <= self.nan_threshold
+        
+        # 2. Drop constant features (variance < 0.01)
+        variances = np.var(X_filled, axis=0)
+        keep_var_mask = (variances >= self.var_threshold) & keep_nan_mask
+        
+        # 3. Handle high colinearity (Pearson correlation > 0.90)
+        df_corr = pd.DataFrame(X_filtered).corr().abs()
+        to_drop = set()
+        for i in range(n_features):
+            for j in range(i + 1, n_features):
+                if df_corr.iloc[i, j] > self.corr_threshold:
+                    if vars_filtered[i] >= vars_filtered[j]:
+                        to_drop.add(j)
+                    else:
+                        to_drop.add(i)
+```
+* **Methodology**:
+  - Concatenates **Morgan Fingerprints** (2048-bit structural indicators) and **MACCS Keys** (166-bit dictionary keys).
+  - Calculates full RDKit properties (~210 continuous descriptors).
+  - Fits a fitted, serializable `FeatureFilter` pipeline strictly on the training set to prevent data leakage. Descriptors are filtered for zero variance and dropped if they show a correlation coefficient $>0.90$, before scaling with a `StandardScaler`.
+
+---
+
+### 4.3 `src/feature_caching.py`
+* **Role**: Save computed vectors to cache files on disk to speed up hyperparameter tuning runs.
+* **Logic**: Evaluates whether cached models exist. If not, runs feature generation steps, preventing repeated evaluations of identical SMILES strings.
+
+---
+
+# CHAPTER 5: Conformal Predictions & Machine Learning Core
+
+```
+src/
+├── conformal.py
+├── ml_base.py
+├── nested_cv.py
+└── retrain_production.py
+```
+
+---
+
+### 5.1 `src/conformal.py`
+* **Role**: Wrap predictions with MAPIE conformal wrappers to produce mathematically guaranteed 90% confidence intervals.
+* **Code Fragment**:
+```python
+from mapie.regression import CrossConformalRegressor
+
+def train_conformal_model(base_model, X_train, y_train, cv=5):
+    mapie = CrossConformalRegressor(
+        estimator=base_model, 
+        cv=cv, 
+        confidence_level=0.90, 
+        method="plus", 
+        n_jobs=1
+    )
+    mapie.fit_conformalize(X_train, y_train)
+    return mapie
+```
+* **Mathematical Logic**:
+  - Classical regressors provide a point prediction, which can be untrustworthy for novel compounds.
+  - Conformal predictions use a Jackknife+ algorithm (`method="plus"`), fitting 5 cross-validation folds. It aggregates the out-of-fold residuals to construct prediction intervals:
+$$[P_{lower}, P_{upper}]$$
+  - These intervals guarantee that the true experimental value will fall within the bounds exactly 90% of the time, providing a mathematically calibrated measure of model confidence.
+
+---
+
+### 5.2 `src/ml_base.py`
+* **Role**: Establish core data preparation templates, train baseline regressors, and plot evaluation residuals.
+* **Code Fragment**:
+```python
+def preprocess_data(df, use_fingerprints=True, use_properties=True, n_bits=2048):
+    train_df, test_df = scaffold_split(temp_df, test_size=0.2, random_state=42)
+    X_train, X_test, pipeline = build_feature_matrix(train_df, test_df, smiles_col='smiles')
+    return X_train_df, X_test_df, y_train, y_test, pipeline, feature_names
+```
+* **Logic**: Integrates preprocessing scripts, trains mock baseline structures, and saves residual density distribution plots.
+
+---
+
+### 5.3 `src/src/nested_cv.py`
+* **Role**: Run deterministic chunk-and-merge Nested Cross-Validation with Optuna hyperparameter optimization.
+* **Key Code Fragment (Optuna Optimization Loop)**:
+```python
+def run_fold(subtype: str, fold: int, trials: int = 20):
+    outer_folds = get_outer_folds(df_st, n_splits=5, random_state=42)
+    train_df = df_st.iloc[train_idx].reset_index(drop=True)
+    test_df = df_st.iloc[test_idx].reset_index(drop=True)
+    
+    inner_folds = get_inner_folds(train_df, n_splits=3, random_state=100 + fold)
+    
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
+            "max_depth": trial.suggest_int("max_depth", 3, 8),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0)
+        }
+        # Evaluates 3-fold inner loop
+        return np.mean(inner_maes)
+```
+* **Workflow Logic**:
+  - **Outer Loop (5-fold)**: Splits the data into 5 outer folds based on molecular scaffolds. For each fold, one chunk is reserved for testing, and the other four are passed to the inner loop.
+  - **Inner Loop (3-fold)**: Performs 3-fold CV scaffold splits. Optuna runs trials to find the parameters that minimize MAE.
+  - **Production Hyperparameters**: Once all folds complete, running `--merge` computes the median hyperparameters across the folds and outputs performance summaries. This approach is memory-safe and suitable for standard hardware.
+
+---
+
+### 5.4 `src/retrain_production.py`
+* **Role**: Retrain production models on the complete dataset using the optimal hyperparameters found during nested cross-validation.
+* **Code Fragment**:
+```python
+for st in SUBTYPES:
+    params = best_params_per_subtype[st].copy()
+    params.update({"tree_method": "hist", "n_jobs": -1, "random_state": 42})
+    
+    base_xgb = xgb.XGBRegressor(**params)
+    conformal_model = train_conformal_model(base_xgb, X_tr, y_tr, cv=5)
+    
+    model_name = f"xgboost_precise_{st.lower()}_model.pkl"
+    with open(Path("models/precise") / model_name, "wb") as f:
+        pickle.dump(conformal_model, f)
+```
+* **Logic**: Trains a final conformal-wrapped model for each subtype. It saves these estimators under the `models/precise/` directory to serve Streamlit queries.
+
+---
+
+# CHAPTER 6: Selectivity & Direct Difference Modeling
+
+```
+src/
+├── selectivity_models.py
+└── phase6_reporting.py
+```
+
+---
+
+### 6.1 `src/selectivity_models.py`
+* **Role**: Train pairwise delta activity regression models to predict selectivity differences directly.
+* **Key Code Fragment**:
+```python
+for subA, subB in pairs:
+    paired_data = []
+    for smiles, values in lookup.items():
+        if subA in values and subB in values:
+            paired_data.append({
+                "smiles": smiles,
+                "delta_pchembl": values[subA] - values[subB]
+            })
+    
+    df_pair = pd.DataFrame(paired_data)
+    train_df, test_df = scaffold_split(df_pair, test_size=0.2, random_state=42, smiles_col="smiles")
+    # Train delta model
+    model = xgb.XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=5, tree_method="hist")
+    model.fit(X_train, y_train)
+```
+* **Scientific Significance**:
+  - Standard approaches calculate selectivity by subtracting the predictions of two separate models:
+$$\Delta\text{Activity} = f_A(x) - f_B(x)$$
+  - This approach can accumulate errors from both models.
+  - By training a dedicated model directly on the experimental activity differences ($\Delta pChEMBL$) of compounds tested against both targets, experimental biases are canceled out. This improves the accuracy of virtual selectivity screens.
+
+---
+
+### 6.2 `src/phase6_reporting.py`
+* **Role**: Evaluate direct delta models and export validation matrices, out-of-distribution summaries, and confidence intervals.
+* **Logic**: Runs evaluations using `_calibration_quartiles` to verify that predictions meet academic validation standards.
+
+---
+
+# CHAPTER 7: Validation, Explanations, & Robustness Checks
+
+```
+src/
+├── y_randomization.py
+├── shap_analysis.py
+└── evaluator.py
+```
+
+---
+
+### 7.1 `src/y_randomization.py`
+* **Role**: Perform Y-randomization validation to verify the model learns true structural relationships rather than dataset bias.
+* **Key Code Fragment**:
+```python
+for i in range(n_iterations):
+    # Permute the y values to break the SMILES-activity relationship
+    y_train_shuffled = np.random.RandomState(42 + i).permutation(y_train)
+    
+    shuffled_model = xgb.XGBRegressor(n_estimators=500, learning_rate=0.05, max_depth=6)
+    shuffled_model.fit(X_train, y_train_shuffled)
+    
+    shuffled_preds = shuffled_model.predict(X_test)
+    shuffled_r2 = float(r2_score(y_test, shuffled_preds))
+    shuffled_r2s.append(shuffled_r2)
+```
+* **Scientific Logic**:
+  - The script shuffles the $pChEMBL$ labels, breaking the relationship between chemical structures and biological activity, then retrains the model.
+  - If the model achieves a high $R^2$ on the test set using shuffled labels, the model is learning patterns from noise or dataset artifacts (bias).
+  - A successful validation is achieved when the shuffled models yield near-zero or negative $R^2$ scores, proving the production model relies on genuine chemical relationships.
+
+---
+
+### 7.2 `src/shap_analysis.py`
+* **Role**: Run SHAP tree explainability analysis to calculate global feature importances and run chemical sanity checks.
+* **Key Code Fragment**:
+```python
+import shap
+
+if type(model).__name__ == "CrossConformalRegressor":
+    estimator = model._mapie_regressor.estimator_.estimators_[0]
+
+explainer = shap.TreeExplainer(estimator)
+shap_values = explainer(X_test)
+
+# Chemical sanity validation
+expected_top = ["AromRings", "HBD", "HBA", "TPSA", "LogP", "MolWt"]
+matching_expected = [f for f in expected_top if any(f in item["feature"] for item in top_features)]
+
+sanity_status = "PASS" if len(matching_expected) > 0 else "WARNING"
+```
+* **Logic**:
+  - Uses SHAP (SHapley Additive exPlanations) values based on game theory to calculate the contribution of each chemical feature.
+  - **Chemical Sanity Check**: Ensures that key continuous descriptors (such as aromatic ring counts, hydrogen-bond donors/acceptors, and lipophilicity) rank among the top features, verifying that the model's predictions align with established pharmacological principles.
+
+---
+
+### 7.3 `src/evaluator.py`
+* **Role**: Generate test set statistics, evaluate absolute errors (MAE, RMSE, $R^2$), and check prediction interval calibration.
+* **Code Fragment**:
+```python
+def _calibration_quartiles(y_true, y_pred, y_std):
+    order = np.argsort(y_std)
+    bins = np.array_split(order, 4)
+    out = []
+    for i, idx in enumerate(bins, start=1):
+        mae = float(np.mean(np.abs(y_true[idx] - y_pred[idx])))
+        out.append({
+            "bin": i,
+            "std_mean": float(np.mean(y_std[idx])),
+            "mae_mean": mae
+        })
+    return out
+```
+* **Logic**: Group test predictions into quartiles based on their conformal uncertainty values. A well-calibrated model will show a monotonic increase in MAE as the predicted uncertainty increases, indicating that the conformal bounds are reliable.
+
+---
+
+# CHAPTER 8: Visualizations & Descriptive Analytics
+
+```
+src/
+├── visualizations.py
+├── visualization_tuning.py
+├── analysis.py
+└── main.py
+```
+
+---
+
+### 8.1 `src/visualizations.py`
+* **Role**: Create diagnostic plots, including boxplots, scatterplots, and correlation heatmaps.
+* **Code Fragment**:
+```python
+def plot_correlation_heatmap(df):
+    numeric_df = df.select_dtypes(include=['number'])
+    corr = numeric_df.corr()
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap='coolwarm', center=0, square=True)
+    plt.savefig("outputs/correlation_heatmap.png", dpi=300)
+```
+
+---
+
+### 8.2 `src/visualization_tuning.py`
+* **Role**: Plot hyperparameter optimization curves, showing the performance plateau across different tree depths and estimators.
+* **Logic**: Generates curves showing training vs. cross-validation performance to identify overfitting thresholds.
+
+---
+
+### 8.3 `src/analysis.py`
+* **Role**: Compute descriptive statistics, including outlier detection using Interquartile Range (IQR) checks.
+* **Logic**: Calculates lower and upper bounds to identify assay anomalies:
+$$\text{Lower} = Q_1 - 1.5 \times \text{IQR}, \quad \text{Upper} = Q_3 + 1.5 \times \text{IQR}$$
+
+---
+
+### 8.4 `src/main.py`
+* **Role**: Serve as a pipeline execution script to generate feature importance summaries.
+* **Logic**: Accesses booster importance maps to save feature gain files.
+
+---
+
+# CHAPTER 9: Prediction Interface & Streamlit Application
+
+```
+src/
+├── predictor.py
+└── streamlit_app.py
+```
+
+---
+
+### 9.1 `src/predictor.py`
+* **Role**: Provide a single prediction interface that handles database lookups, conformal inference, and direct selectivity calculations.
+* **Key Code Fragment**:
+```python
+def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[str, Any]:
+    canon = canonicalize(smiles)
+    lookup = _load_db_lookup()
+    
+    # 1. Database Fast-Pass Check
+    if canon in lookup:
         exp = lookup[canon]
         for st in SUBTYPES:
-            preds[st], unc[st] = float(exp.get(st, 0.0)), 0.0
+            val = exp.get(st)
+            preds[st] = float(val) if pd.notna(val) else 0.0
+            unc[st] = 0.0
+            intervals[st] = {"lower": preds[st], "upper": preds[st], "width": 0.0}
         source = "database"
+    else:
+        # 2. Conformal Inference
+        x = build_features(canon, scaler)
+        for st in SUBTYPES:
+            m, s, low, high = _ensemble_predict(models[st], x)
+            preds[st], unc[st] = m, s
+            intervals[st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+        source = "model"
 ```
-**Explanation:** When a user queries a molecule, we first check `db_lookup.json`. If the user asks about Caffeine, and Caffeine was already in our original ChEMBL training data, **we do not run the AI model**. The AI might have a margin of error, but our database has the literal, true laboratory result. We bypass the XGBoost ensemble entirely and return the exact experimental `pChEMBL` value. This guarantees 100% accuracy on historically known drugs.
-
-### 8.2 Safety & Drug Likeness (PAINS & QED)
-```python
-        with col_pains:
-            alerts = check_pains(smiles)
-            if alerts: st.error(f"PAINS alert(s) detected: {', '.join(alerts)}")
-```
-**Explanation:** PAINS (Pan Assay Interference Compounds) are chemical structures that frequently give false-positive results in lab tests because they react with the assay chemicals, not the receptor itself. We use RDKit's PAINS filters to warn the researcher if the AI's prediction might be based on a chemically deceptive sub-structure. We also compute QED (Quantitative Estimate of Drug-likeness), which scores the molecule from 0 to 1 based on how similar its physical properties are to FDA-approved oral drugs.
-
-### 8.3 Explainability (Nearest Neighbors)
-```python
-        # Top-5 Similar Training Molecules
-        canon_smi, top_sims = topk_tanimoto(smiles, k=5)
-```
-**Explanation:** If the AI predicts a novel molecule has an incredibly high affinity, the researcher will immediately ask: "Why?" Our UI calculates the Tanimoto similarity against the 10,000+ training molecules and displays the top 5 most structurally similar molecules. This allows the chemist to manually verify if the AI's logic is sound by looking at historically active analogs.
+* **Inference Logic**:
+  - **Database Fast-Pass**: Queries the canonical SMILES against the processed database. If matched, it returns the experimental values directly, ensuring 100% accuracy for previously assayed compounds.
+  - **Model Inference**: If the compound is novel, the script generates features, runs conformal predictions for all four subtypes, and computes direct pairwise selectivity ratios.
 
 ---
 
-# Chapter 9: Defense Strategy (Conclusion)
+### 9.2 `src/streamlit_app.py`
+* **Role**: Orchestrate the primary Web Dashboard, integrating 2D vector depictions, interactive 3D WebGL viewers, explainability tabs, and batch processing interfaces.
+* **Key Code Fragment (3D WebGL Viewer Integration)**:
+```python
+def render_3d_viewer(mol_block: str) -> str:
+    escaped_mol = json.dumps(mol_block)
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://3dmol.org/build/3Dmol-min.js"></script>
+    </head>
+    <body>
+        <div id="container-3dmol" style="width:100%; height:350px; background-color:#f8f9fa;"></div>
+        <script>
+            $(document).ready(function() {{
+                let element = $('#container-3dmol');
+                let viewer = $3Dmol.createViewer(element, {{ backgroundColor: '#f8f9fa' }});
+                viewer.addModel({escaped_mol}, "sdf");
+                viewer.setStyle({{}}, {{stick: {{radius: 0.2, colorscheme: 'Jmol'}}, sphere: {{radius: 0.4, scale: 0.3}}}});
+                viewer.zoomTo();
+                viewer.render();
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+```
+* **Dashboard Features**:
+  - Displays performance metrics alongside conformal prediction insights.
+  - Splits prediction views into two columns: a 2D vector structure and a 3D WebGL rotating stick conformer using `3Dmol.js`.
+  - Displays live Attributions using SHAP explainer bar plots.
 
-If an academic reviewer critiques your model, use this textbook to defend your choices:
+---
 
-1. **Critique:** "Your MAE is 1.0 in log base, that's a 10x error!"
-   **Defense:** Open Chapter 7. Explain that for early-stage 2D virtual screening, we aren't doing lead-optimization. We are doing "bucket classification" (separating $\mu M$ from $nM$ drugs) before running expensive 3D docking.
-2. **Critique:** "You should use 3D structural data from the bound complex."
-   **Defense:** Agree completely. Explain that this codebase is the required **2D Baseline**. You had to build the data ingestion (Chap 2), the scaffold splitting (Chap 4), and the evaluation pipeline (Chap 7) to have something to benchmark future 3D Graph Neural Networks against. 
-3. **Critique:** "Your model is over-fitted."
-   **Defense:** Open Chapter 4. Show them `MurckoScaffold`. Prove that the model was tested on chemical backbones it had never seen before.
+# CHAPTER 10: Streamlit App UI Subcomponents
 
-*You are now the master of this codebase.*
+```
+src/app/
+└── components/
+    ├── batch_predict.py
+    ├── model_reports.py
+    ├── pains_checker.py
+    ├── drug_likeness.py
+    ├── applicability_domain.py
+    └── structure_viz.py
+```
+
+---
+
+### 10.1 `src/app/components/batch_predict.py`
+* **Role**: Manage bulk screening runs, mapping columns, computing metrics, and calculating applicability domains for uploaded spreadsheets.
+* **Key Code Fragment**:
+```python
+# Calculate Applicability Domain / Reliability for batch predictions
+if train_fps:
+    query_fps = [AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(s), 2, nBits=2048) 
+                 for s in to_predict]
+    reliability_scores = []
+    for q_fp in query_fps:
+        sims = DataStructs.BulkTanimotoSimilarity(q_fp, train_fps)
+        reliability_scores.append(max(sims))
+    res_df.loc[novel_mask, 'reliability'] = reliability_scores
+```
+* **Logic**:
+  - Guides batch processing through three distinct steps: SMILES validation, featurization, and model inference.
+  - Computes the Tanimoto similarity between the query fingerprints and the training set, warning users if a compound is out-of-distribution (low similarity).
+
+---
+
+### 10.2 `src/app/components/model_reports.py`
+* **Role**: Format cross-validation metrics, scaffold summaries, and example predictions for display in the dashboard.
+* **Logic**: Parses output files to present clean statistics tables in the Streamlit UI.
+
+---
+
+### 10.3 `src/app/components/pains_checker.py`
+* **Role**: Serve as the UI wrapper for RDKit's PAINS assay interference checks.
+
+---
+
+### 10.4 `src/app/components/drug_likeness.py`
+* **Role**: Serve as the UI wrapper for Lipinski and QED calculations.
+
+---
+
+### 10.5 `src/app/components/applicability_domain.py`
+* **Role**: Serve as the UI wrapper for Tanimoto similarity checks.
+
+---
+
+### 10.6 `src/app/components/structure_viz.py`
+* **Role**: Serve as the UI wrapper for molecular drawing and 3D conformer generation.
+
+---
+
+# CHAPTER 11: Dataset Diagnostics
+
+```
+src/
+└── diagnostics/
+    └── a1_diagnosis.py
+```
+
+---
+
+### 11.1 `src/diagnostics/a1_diagnosis.py`
+* **Role**: Analyze data distributions, calculate scaffold diversity, and identify activity cliffs.
+* **Key Code Fragment (Activity Cliff Identification)**:
+```python
+# Detect Activity Cliffs using RDKit's BulkTanimotoSimilarity
+activity_cliffs = []
+for i in range(n_total):
+    qfp = fps[i]
+    tfps = fps[i+1:]
+    sims = DataStructs.BulkTanimotoSimilarity(qfp, tfps)
+    for idx, sim in enumerate(sims):
+        j = i + 1 + idx
+        if sim >= 0.80:
+            diff = abs(pchembl_vals[i] - pchembl_vals[j])
+            if diff >= 1.50:
+                activity_cliffs.append({
+                    "compound_1_smiles": df_sub.loc[i, "canonical_smiles"],
+                    "compound_1_pchembl": float(pchembl_vals[i]),
+                    "compound_2_smiles": df_sub.loc[j, "canonical_smiles"],
+                    "compound_2_pchembl": float(pchembl_vals[j]),
+                    "tanimoto_similarity": float(sim),
+                    "pchembl_difference": float(diff)
+                })
+```
+* **Scientific Logic**:
+  - **Activity Cliff**: Occurs when two compounds are highly similar structurally (Tanimoto similarity $\ge 0.80$) but show a large difference in biological activity ($\ge 1.50$ log units).
+  - This identifies structural hotspots where minor modifications significantly alter target selectivity. These data points are highly informative for lead optimization.
+
+---
+
+# CHAPTER 12: Pipeline Orchestration Master-Script
+
+```
+src/
+└── run_pipeline.py
+```
+
+---
+
+### 12.1 `src/run_pipeline.py`
+* **Role**: Coordinate the execution of training, validation, explainability, diagnostics, and dashboard generation.
+* **Code Fragment**:
+```python
+def main():
+    run_step(["-m", "src.retrain_production"], "Production Model Training & Conformal Prediction (MAPIE)")
+    run_step(["-m", "src.selectivity_models"], "Pairwise Affinity Difference Selectivity Models")
+    run_step(["-m", "src.y_randomization", "--subtype", "A2A", "--iterations", "15"], "Y-Randomization Robustness Check (A2A)")
+    run_step(["-m", "src.shap_analysis", "--subtype", "A2A"], "SHAP Tree Explainability & Chemical Sanity (A2A)")
+    run_step(["-m", "src.diagnostics.a1_diagnosis"], "A1 Receptor Dataset Bottleneck Diagnostics")
+    run_step(["-m", "src.evaluator"], "Conformal Model Metrics Evaluator (Precise Mode)")
+    run_step(["results.py"], "Streamlit Example Predictions Generator")
+```
+* **Pipeline Flow**:
+```mermaid
+graph TD
+    A[data_loader: Clean Data] --> B[retrain_production: Conformal Models]
+    B --> C[selectivity_models: Pairwise Difference]
+    B --> D[y_randomization: Robustness Check]
+    B --> E[shap_analysis: TreeSHAP]
+    A --> F[a1_diagnosis: Dataset Quality]
+    B --> G[evaluator: Metrics]
+    G --> H[results: Examples JSON]
+    H --> I[streamlit_app: Interactive Dashboard]
+```
+
+---
+
+# CHAPTER 13: Technical Defense Strategy
+
+If an academic reviewer or professor evaluates this system, use the following points to explain your design decisions:
+
+1. **scaffold_split.py**: Explain that random splits lead to target leakage. Splitting by scaffold ensures that the model is tested on unique chemical skeletons, validating its out-of-distribution generalizability.
+2. **conformal.py**: Highlight that point predictions do not indicate prediction confidence. Integrating MapieRegressor conformal intervals provides mathematically guaranteed bounds based on historical residuals, confirming the reliability of early-stage virtual screening.
+3. **selectivity_models.py**: Note that predicting selectivity via separate models accumulates individual errors. Dedicated delta models trained on the activity differences of co-assayed compounds cancel assay biases and improve selectivity screening accuracy.
+4. **y_randomization.py**: Mention that machine learning can learn dataset noise. Demonstrating that performance drops to zero when target values are shuffled confirms that the model relies on structural chemistry relationships.

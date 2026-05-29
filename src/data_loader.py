@@ -31,8 +31,11 @@ def load_and_clean(
     file_path: str,
     save_lookup_path: str = "data/processed/db_lookup.json",
     mode: str = "precise",
+    target_role: str = "all",
+    target_endpoint: str = "all",
+    include_decoys: bool = False,
 ):
-    print(f"\n[INFO] Running precise filtering on {file_path} (Requested mode: {mode} -> Unified Precise Filter)")
+    print(f"\n[INFO] Running precise filtering on {file_path} (Role={target_role}, Endpoint={target_endpoint}, Decoy Ingestion={include_decoys})")
     df = pd.read_csv(file_path)
 
     required = {
@@ -60,17 +63,31 @@ def load_and_clean(
     # - Exact relationships only to avoid bound-based pollution
     # - High confidence target assignment (confidence_score >= 6)
     # - Direct binding (B) or functional (F) assays
-    # - Supported standard types
+    # - Supported standard types and role filtering
     # - Valid pChEMBL value
     initial_count = len(df)
     
+    # Base filter
     df = df[
         (df["standard_relation"] == "=") &
         (df["confidence_score"] >= 6) &
         (df["assay_type"].isin({"B", "F"})) &
-        (df["standard_type"].isin({"KI", "KD", "IC50", "EC50"})) &
         (df["pchembl_value"].notna())
     ].copy()
+    
+    # Endpoint filtering
+    if target_endpoint != "all":
+        if target_endpoint.upper() in {"KI", "KD"}:
+            df = df[df["standard_type"].isin({"KI", "KD"})].copy()
+        elif target_endpoint.upper() in {"IC50", "EC50"}:
+            df = df[df["standard_type"].isin({"IC50", "EC50"})].copy()
+    else:
+        df = df[df["standard_type"].isin({"KI", "KD", "IC50", "EC50"})].copy()
+        
+    # Role filtering
+    if target_role != "all":
+        if "role" in df.columns:
+            df = df[df["role"].astype(str).str.lower() == target_role.lower()].copy()
 
     # Map subtypes
     df["TAG"] = df["TAG"].astype(str).str.strip()
@@ -131,6 +148,40 @@ def load_and_clean(
             row["target_subtype"]: float(row["pchembl_value"])
             for _, row in subdf.iterrows()
         }
+
+    # Inject high-quality mutual decoys if requested
+    if include_decoys:
+        print("[INFO] Programmatic mutual decoy generation triggered...")
+        all_smiles = df_deduped["canonical_smiles"].unique()
+        decoy_rows = []
+        SUBTYPES = ["A1", "A2A", "A2B", "A3"]
+        for smiles in all_smiles:
+            subtype_vals = lookup.get(smiles, {})
+            # Check if active on any other subtype (pChEMBL >= 6.5)
+            actives = [sub for sub, val in subtype_vals.items() if val >= 6.5]
+            if actives:
+                # Add a decoy row for any subtype NOT present (representing non-binder off-targets)
+                for sub in SUBTYPES:
+                    if sub not in subtype_vals:
+                        decoy_rows.append({
+                            "TAG": f"{sub}R",
+                            "canonical_smiles": smiles,
+                            "pchembl_value": 3.0,  # Decoy inactive affinity
+                            "target_subtype": sub,
+                            "standard_type": "DECOY",
+                        })
+        if decoy_rows:
+            decoy_df = pd.DataFrame(decoy_rows)
+            df_deduped = pd.concat([df_deduped, decoy_df], ignore_index=True)
+            print(f"[SUCCESS] Ingested {len(decoy_df)} high-quality mutual decoy (non-binder) controls.")
+            
+            # Rebuild lookup to include the newly generated decoys!
+            lookup = {}
+            for smi, subdf in df_deduped.groupby("canonical_smiles"):
+                lookup[smi] = {
+                    row["target_subtype"]: float(row["pchembl_value"])
+                    for _, row in subdf.iterrows()
+                }
 
     # Save lookup to disk
     Path(save_lookup_path).parent.mkdir(parents=True, exist_ok=True)

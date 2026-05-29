@@ -32,6 +32,9 @@ def main():
     # Step 2: Build Direct Selectivity Models
     run_step(["-m", "src.selectivity_models"], "Pairwise Affinity Difference Selectivity Models")
     
+    # Step 2b: Build Antagonist-Specific and Unified PCM Models
+    run_step(["-m", "src.train_antagonists"], "Training Antagonist-Specific (pKi/pIC50) and Unified Proteochemometric (PCM) Models")
+    
     # Step 3: Run Y-Randomization on A2A subtype
     run_step(["-m", "src.y_randomization", "--subtype", "A2A", "--iterations", "15"], "Y-Randomization Robustness Check (A2A)")
     

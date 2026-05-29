@@ -1,4 +1,4 @@
-from src.chem_utils import draw_2d as _draw_2d, draw_2d_svg as _draw_2d_svg, generate_3d_conformer as _generate_3d_conformer
+from src.chem_utils import draw_2d as _draw_2d, draw_2d_svg as _draw_2d_svg, generate_3d_conformer as _generate_3d_conformer, generate_pdb_block as _generate_pdb_block
 
 
 def draw_2d(smiles: str, size: tuple[int, int] = (400, 300)):
@@ -9,3 +9,6 @@ def draw_2d_svg(smiles: str, size: tuple[int, int] = (400, 300)):
 
 def generate_3d_conformer(smiles: str):
     return _generate_3d_conformer(smiles)
+
+def generate_pdb_block(smiles: str):
+    return _generate_pdb_block(smiles)
