@@ -190,17 +190,8 @@ def _section_single_prediction():
     # User Input - Single Smiles Field
     smiles = st.text_input("SMILES Compound Input", value="CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S")
     
-    # Model Mode Selection
-    mode = st.selectbox(
-        "Select Predictor Model Mode",
-        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
-        format_func=lambda x: {
-            "precise": "Unified Precise (All Ligand Classes)",
-            "antagonist_ki": "Antagonist-Specific pKi (Decoy-Supported)",
-            "antagonist_ic50": "Antagonist-Specific pIC50 (Decoy-Supported)",
-            "pcm": "Unified Multi-Target Proteochemometric (PCM)"
-        }[x]
-    )
+    # Model mode is set to unified precise model
+    mode = "precise"
     
     threshold = 6.0
 
@@ -498,18 +489,8 @@ def _section_batch_prediction():
     smiles_col = _infer_smiles_col(df)
     st.write(f"Detected SMILES column: **{smiles_col}** | Total Rows: {len(df)}")
 
-    # Model Mode Selection for Batch
-    mode = st.selectbox(
-        "Select Predictor Model Mode for Batch Processing",
-        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
-        format_func=lambda x: {
-            "precise": "Unified Precise (All Ligand Classes)",
-            "antagonist_ki": "Antagonist-Specific pKi (Decoy-Supported)",
-            "antagonist_ic50": "Antagonist-Specific pIC50 (Decoy-Supported)",
-            "pcm": "Unified Multi-Target Proteochemometric (PCM)"
-        }[x],
-        key="batch_model_mode"
-    )
+    # Model mode is set to unified precise model
+    mode = "precise"
     
     threshold = 6.0
 
@@ -534,81 +515,42 @@ def _section_batch_prediction():
 def _section_results():
     st.header("Model Validation & Diagnostics Results")
     
-    view_mode = st.selectbox(
-        "Select Model Type to View Evaluation Metrics",
-        options=["precise", "antagonist_ki", "antagonist_ic50", "pcm"],
-        format_func=lambda x: {
-            "precise": "Unified Precise Mode (All Ligand Classes)",
-            "antagonist_ki": "Antagonist-Specific pKi (Holdout Scaffold Validation)",
-            "antagonist_ic50": "Antagonist-Specific pIC50 (Holdout Scaffold Validation)",
-            "pcm": "Unified Multi-Target Proteochemometric (PCM) Model"
-        }[x],
-        key="results_view_mode_selector"
-    )
+    view_mode = "precise"
     
     tab_metrics, tab_shap_y, tab_a1_diag, tab_examples = st.tabs([
         "Validation Metrics", "TreeSHAP & Y-Randomization", "Dataset Quality Diagnostics", "Example Predictions"
     ])
   
     with tab_metrics:
-        if view_mode == "precise":
-            # Check if we have Nested CV report to show
-            nested_cv_report = Path("outputs/nested_cv/merged_report.md")
-            if nested_cv_report.exists():
-                st.subheader("Deterministic Nested Cross-Validation (Scaffold Split + HPO)")
-                st.write("Aggregated 5-fold outer scaffold split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):")
-                with open(nested_cv_report, "r") as f_ncv:
-                    st.markdown(f_ncv.read())
-                st.divider()
-                
-            try:
-                base_dir = "outputs/validoutput/precise"
-                overall_df, per_df = load_evaluation_tables(base_dir)
-                if not overall_df.empty:
-                    st.subheader("Ensemble Metrics vs Baseline (PRECISE Mode)")
-                    st.dataframe(overall_df, use_container_width=True)
-                if not per_df.empty:
-                    st.subheader("Per-Receptor Subtype Metrics (PRECISE Mode)")
-                    st.dataframe(per_df, use_container_width=True)
-            except Exception as e:
-                st.warning(f"Could not load evaluation report: {e}")
-      
-            img_path = "outputs/validoutput/precise/calibration_precise_plot.png"
-            if not Path(img_path).exists():
-                img_path = "outputs/validoutput/precise/calibration_root_plot.png"
-            if not Path(img_path).exists():
-                img_path = "outputs/calibration_plot.png"
-            if Path(img_path).exists():
-                st.subheader("Calibration Plot (PRECISE Mode)")
-                st.image(img_path, use_container_width=True)
-                
-        elif view_mode in ["antagonist_ki", "antagonist_ic50"]:
-            folder = "models/antagonist_ki" if view_mode == "antagonist_ki" else "models/antagonist_ic50"
-            summary_path = Path(folder) / "summary.json"
+        # Check if we have Nested CV report to show
+        nested_cv_report = Path("outputs/nested_cv/merged_report.md")
+        if nested_cv_report.exists():
+            st.subheader("Deterministic Nested Cross-Validation (Scaffold Split + HPO)")
+            st.write("Aggregated 5-fold outer scaffold scaffold-split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):")
+            with open(nested_cv_report, "r") as f_ncv:
+                st.markdown(f_ncv.read())
+            st.divider()
             
-            title = "Antagonist-Specific pKi" if view_mode == "antagonist_ki" else "Antagonist-Specific pIC50"
-            st.subheader(f"🎯 {title} Conformal Models (scaffold Holdout Split)")
-            st.write("Validation metrics evaluated on completely unseen out-of-distribution Bemis-Murcko scaffolds with mutual decoy controls:")
-            
-            if summary_path.exists():
-                try:
-                    with open(summary_path, "r") as f_sum:
-                        data = json.load(f_sum)
-                    rows = [{"Receptor Subtype": k, "R² Score": f"{v['r2']:.4f}", "MAE": f"{v['mae']:.4f}", "RMSE": f"{v['rmse']:.4f}"} for k, v in data.items()]
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error loading summary report: {e}")
-            else:
-                st.info(f"Antagonist evaluation summary file missing at {summary_path}. Run training first.")
-                
-        elif view_mode == "pcm":
-            st.subheader("🧬 Unified Multi-Target Proteochemometric (PCM) Model")
-            st.write("A single global model trained on all subtypes simultaneously by combining ligand properties and receptor one-hot sequence indicators:")
-            pcm_metrics = {
-                "Validation Metric": ["R² Score", "Mean Absolute Error (MAE)", "Root Mean Squared Error (RMSE)"],
-                "Scaffold Holdout Split Value": ["0.5508", "0.8576 pChEMBL units", "1.3307 pChEMBL units"]
-            }
-            st.dataframe(pd.DataFrame(pcm_metrics), use_container_width=True)
+        try:
+            base_dir = "outputs/validoutput/precise"
+            overall_df, per_df = load_evaluation_tables(base_dir)
+            if not overall_df.empty:
+                st.subheader("Ensemble Metrics vs Baseline (PRECISE Mode)")
+                st.dataframe(overall_df, use_container_width=True)
+            if not per_df.empty:
+                st.subheader("Per-Receptor Subtype Metrics (PRECISE Mode)")
+                st.dataframe(per_df, use_container_width=True)
+        except Exception as e:
+            st.warning(f"Could not load evaluation report: {e}")
+  
+        img_path = "outputs/validoutput/precise/calibration_precise_plot.png"
+        if not Path(img_path).exists():
+            img_path = "outputs/validoutput/precise/calibration_root_plot.png"
+        if not Path(img_path).exists():
+            img_path = "outputs/calibration_plot.png"
+        if Path(img_path).exists():
+            st.subheader("Calibration Plot (PRECISE Mode)")
+            st.image(img_path, use_container_width=True)
   
     with tab_a1_diag:
         st.subheader("Dataset Quality & Activity Cliff Diagnostics")
@@ -773,34 +715,19 @@ def run_app():
             This web application facilitates rapid, high-confidence in silico profiling of binding affinities (pChEMBL values) across all four adenosine receptor subtypes (A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub>). By predicting candidate compound profiles, researchers can systematically identify subtype-selective hits and assess off-target liabilities early in the drug discovery process.
         </p>
         <div style="display: flex; flex-direction: row; gap: 15px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
-                <strong style="color: #005a9c;">🎯 Unified Precise Metrics</strong>
+            <div style="flex: 1; min-width: 320px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+                <strong style="color: #005a9c;">🎯 Conformal Model Performance Metrics</strong>
                 <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
-                    <li>Overall Model <strong>MAE = 0.516</strong></li>
-                    <li>Overall Model <strong>R² = 0.411</strong></li>
-                    <li>Evaluated on 9,589 parent compounds</li>
+                    <li>Overall Ensemble Model <strong>MAE = 0.520 pChEMBL units</strong></li>
+                    <li>Overall Ensemble Model <strong>R² = 0.408</strong></li>
+                    <li>Validated on 9,589 parent compounds across all subtypes</li>
                 </ul>
             </div>
-            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
-                <strong style="color: #005a9c;">🎯 Antagonist pKi (Decoy Boundary)</strong>
-                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
-                    <li>Subtype A<sub>2B</sub> <strong>R² = 0.869</strong></li>
-                    <li>Subtype A<sub>2A</sub> <strong>R² = 0.763</strong></li>
-                    <li>Subtype A<sub>1</sub> <strong>R² = 0.523</strong></li>
-                </ul>
-            </div>
-            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
-                <strong style="color: #005a9c;">🧬 Unified Proteochemometric (PCM)</strong>
-                <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
-                    <li>Multi-Target Model <strong>R² = 0.551</strong></li>
-                    <li>Learns target-descriptor cross-relationships</li>
-                </ul>
-            </div>
-            <div style="flex: 1; min-width: 230px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
+            <div style="flex: 1; min-width: 320px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
                 <strong style="color: #005a9c;">🛡️ Conformal Prediction (MAPIE)</strong>
                 <ul style="margin: 5px 0 0 18px; padding: 0; font-size: 0.85rem; color: #555555;">
-                    <li>Outputs <strong>90% prediction intervals</strong> on-the-fly</li>
-                    <li>Strict separation via Nested CV</li>
+                    <li>Dynamically outputs <strong>90% confidence prediction intervals</strong> for safety bounds</li>
+                    <li>Strictly validated using Nested Cross-Validation with hyperparameter optimization</li>
                 </ul>
             </div>
         </div>
