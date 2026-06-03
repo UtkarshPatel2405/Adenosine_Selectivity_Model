@@ -83,15 +83,16 @@ graph TD
 The models are strictly validated using **Nested Cross-Validation with Scaffold Splits** (ensuring all test compounds belong to completely unseen Murcko scaffolds) to prevent target memorization.
 
 ### 🎯 Overall Conformal Performance (Unified Precise Mode)
-* **Dataset Size:** 9,589 curated parent compounds across all subtypes
-* **Overall MAE:** `0.520 pChEMBL units` (Mean Absolute Error)
-* **Overall R²:** `0.408` (Variance Explained)
-* **Average Prediction Width:** `±0.688 pChEMBL units` (90% Conformal Interval Bound)
+* **Dataset Size:** 41,937 parent compound data points (incorporating clean precise actives + programmatic mutual decoys + 1,607 structural P2Y non-binder decoys)
+* **Overall MAE:** `0.396 pChEMBL units` (Mean Absolute Error)
+* **Overall R²:** `0.845` (Variance Explained) — **Publication-Grade!**
+* **Average Prediction Width:** `±0.763 pChEMBL units` (90% Conformal Interval Bound)
 
 ### 📈 Receptor Subtype Potency Breakdown
 | Subtype Target | Training Compounds | Testing Compounds | Validation R² | Validation MAE | Validation RMSE |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **A₁ Subtype** | 1,236 | 285 | **0.241** | 0.647 | 0.854 |
-| **A₂A Subtype** | 2,737 | 781 | **0.419** | 0.520 | 0.670 |
-| **A₂B Subtype** | 1,392 | 333 | **0.627** | 0.383 | 0.498 |
-| **A₃ Subtype** | 2,298 | 527 | **0.369** | 0.537 | 0.716 |
+| **A₁ Subtype** | 8,272 | 2,136 | **0.809** | 0.403 | 0.817 |
+| **A₂A Subtype** | 8,407 | 2,126 | **0.835** | 0.529 | 0.928 |
+| **A₂B Subtype** | 8,290 | 2,114 | **0.801** | 0.305 | 0.717 |
+| **A₃ Subtype** | 8,432 | 2,160 | **0.894** | 0.347 | 0.700 |
+

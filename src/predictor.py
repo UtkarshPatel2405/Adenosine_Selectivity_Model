@@ -29,7 +29,6 @@ def _load_scaler(mode: str = "precise"):
     with open(path, "rb") as f:
         return pickle.load(f)
 
-@lru_cache(maxsize=1)
 def _load_db_lookup():
     p = Path("data/processed/db_lookup.json")
     return json.load(open(p, "r")) if p.exists() else {}
@@ -134,6 +133,7 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
     in_db = canon in lookup
 
     # 2. Bioactivity Predictions
+    docking_scores = None
     if in_db:
         exp = lookup[canon]
         for st in SUBTYPES:
@@ -145,6 +145,10 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
             else:
                 preds[st], unc[st] = 0.0, 0.0
                 intervals[st] = {"lower": 0.0, "upper": 0.0, "width": 0.0}
+        
+        # Pull pre-computed docking scores if available in the database
+        if isinstance(exp, dict) and "docking" in exp:
+            docking_scores = exp["docking"]
         source = "database"
     else:
         x = build_features(canon, scaler)
@@ -195,5 +199,6 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
         "selectivity_profile": selectivity,
         "best_target": max(preds, key=preds.get),
         "target_hits": [st for st, v in preds.items() if v >= threshold],
-        "source": source
+        "source": source,
+        "docking_scores": docking_scores
     }

@@ -1,6 +1,7 @@
 import pickle
 from pathlib import Path
 
+# pyrefly: ignore [missing-import]
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
@@ -131,6 +132,26 @@ def _maccs_bits(smiles: str) -> np.ndarray:
     return arr
 
 
+CURATED_DESCRIPTORS_LIST = [
+    # 1. Basic Physicochemical Properties
+    "MolWt", "ExactMolWt", "HeavyAtomCount", "HeavyAtomMolWt",
+    "MolLogP", "MolMR", "TPSA", "LabuteASA",
+    
+    # 2. Hydrogen Bonding & Charge polarities
+    "NumHDonors", "NumHAcceptors", "NumRotatableBonds", "FractionCSP3",
+    "MaxAbsPartialCharge", "MaxPartialCharge", "MinAbsPartialCharge", "MinPartialCharge",
+    
+    # 3. Structural Rings & Heteroatoms
+    "RingCount", "NumAromaticRings", "NumAliphaticRings", "NumSaturatedRings",
+    "NumAromaticCarbocycles", "NumAromaticHeterocycles", "NumAliphaticCarbocycles", "NumAliphaticHeterocycles",
+    "NumHeteroatoms", "NumValenceElectrons",
+    
+    # 4. Core topological descriptors (widely-validated in QSAR)
+    "BalabanJ", "BertzCT", "HallKierAlpha", "Kappa1", "Kappa2", "Kappa3",
+    "Chi0n", "Chi0v", "Chi1n", "Chi1v", "Chi2n", "Chi2v", "Chi3n", "Chi3v", "Chi4n", "Chi4v"
+]
+
+
 def _descriptors(smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -150,13 +171,13 @@ def _all_descriptors(smiles: str) -> np.ndarray:
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
     desc_dict = Descriptors.CalcMolDescriptors(mol)
-    vals = [float(desc_dict[k]) if desc_dict[k] is not None else np.nan for k in sorted(desc_dict.keys())]
+    vals = [float(desc_dict[k]) if desc_dict[k] is not None else np.nan for k in CURATED_DESCRIPTORS_LIST]
     return np.array(vals, dtype=np.float32)
 
 
 def _all_descriptors_names() -> list:
-    mol = Chem.MolFromSmiles("CCO")
-    return sorted(Descriptors.CalcMolDescriptors(mol).keys())
+    return list(CURATED_DESCRIPTORS_LIST)
+
 
 
 def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles", save_to_disk: bool = True):
@@ -180,7 +201,7 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
         with open("data/processed/train_fps.pkl", "wb") as f:
             pickle.dump(train_fps, f)
 
-    print("[INFO] Computing full RDKit descriptors (~210)...")
+    print(f"[INFO] Computing curated RDKit descriptors ({len(CURATED_DESCRIPTORS_LIST)})...")
     Xdesc_train = np.vstack([_all_descriptors(s) for s in train_smiles])
     Xdesc_test = np.vstack([_all_descriptors(s) for s in test_smiles])
 
@@ -227,4 +248,4 @@ def build_features(smiles: str, pipeline) -> np.ndarray:
     maccs = _maccs_bits(smiles)
     desc = _all_descriptors(smiles).reshape(1, -1)
     desc_s = pipeline.transform(desc).ravel()
-    return np.hstack([fp.astype(np.float32), maccs.astype(np.float32), desc_s.astype(np.float32)])
+    return np.hstack([fp.astype(np.float32), maccs.astype(np.float32), desc_s.astype(np.float32)])

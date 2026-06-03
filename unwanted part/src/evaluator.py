@@ -8,7 +8,7 @@ from sklearn.dummy import DummyRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from src.data_loader import load_and_clean
-from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split, split_smiles_globally
 
 from src.features import build_feature_matrix
 from src.predictor import _load_models, _ensemble_predict, SUBTYPES
@@ -53,14 +53,13 @@ def evaluate(mode: str = "precise",
         infix = "precise" if mode == "precise" else "std" if mode == "standard" else "strict" if mode == "strict" else "root"
         out_path = f"outputs/validoutput/{mode}/evaluation_{infix}_report.json"
    
-    df, _ = load_and_clean(data_path, mode=mode)
-    train_df, test_df = scaffold_split(
-    df, 
-    test_size=test_size, 
-    random_state=random_state, 
-    smiles_col="canonical_smiles"  # Add this parameter
-)
+    df, _ = load_and_clean(data_path, mode=mode, include_decoys=True)
+    train_smiles, test_smiles = split_smiles_globally(df["canonical_smiles"].unique(), test_size=test_size, random_state=random_state)
+    train_df = df[df["canonical_smiles"].isin(train_smiles)].reset_index(drop=True)
+    test_df = df[df["canonical_smiles"].isin(test_smiles)].reset_index(drop=True)
+    
     X_train, X_test, _scaler = build_feature_matrix(train_df, test_df, smiles_col="canonical_smiles")
+
 
     y_train_all = train_df["pchembl_value"].to_numpy(dtype=float)
     y_test_all = test_df["pchembl_value"].to_numpy(dtype=float)
