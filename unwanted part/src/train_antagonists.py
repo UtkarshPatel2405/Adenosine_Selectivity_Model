@@ -58,8 +58,11 @@ def train_mode_pipeline(
         print(f"[SKIP] Too few compounds available for {role} ({endpoint}): {len(df)}")
         return
         
-    # 2. Scaffold Split to check generalizability (memorizing vs learning test)
-    train_df, test_df = scaffold_split(df, test_size=0.2, random_state=42, smiles_col="smiles")
+    # 2. Scaffold Split globally to prevent target leakage
+    from src.scaffold_split import split_smiles_globally
+    train_smiles, test_smiles = split_smiles_globally(df["smiles"].unique(), test_size=0.2, random_state=42)
+    train_df = df[df["smiles"].isin(train_smiles)].reset_index(drop=True)
+    test_df = df[df["smiles"].isin(test_smiles)].reset_index(drop=True)
     
     # 3. Build features globally on this split
     X_train_glob, X_test_glob, pipeline = build_feature_matrix(train_df, test_df, smiles_col="smiles", save_to_disk=False)
@@ -108,16 +111,20 @@ def train_mode_pipeline(
             pickle.dump(conformal_model, f)
         print(f"  [SUCCESS] Saved model to {model_path}")
         
-        # Evaluate performance on scaffold test set (OOD validation check)
+        # Evaluate performance on scaffold train and test sets to monitor overfitting
         from sklearn.metrics import r2_score
+        train_preds = conformal_model.predict(X_tr)
+        train_r2 = float(r2_score(y_tr, train_preds))
+        train_mae = float(np.mean(np.abs(y_tr - train_preds)))
+        
         preds = conformal_model.predict(X_te)
         r2 = float(r2_score(y_te, preds))
         mae = float(np.mean(np.abs(y_te - preds)))
         rmse = float(np.sqrt(np.mean((y_te - preds) ** 2)))
         
         print(f"  [METRICS] {st} Scaffold OOD Validation:")
-        print(f"    R² Score: {r2:.4f}")
-        print(f"    MAE:      {mae:.4f}")
+        print(f"    Train R²: {train_r2:.3f} | Test R²: {r2:.4f} (Gap: {train_r2 - r2:.3f})")
+        print(f"    Train MAE: {train_mae:.3f} | Test MAE: {mae:.4f}")
         print(f"    RMSE:     {rmse:.4f}")
         
         metrics_summary[st] = {"r2": r2, "mae": mae, "rmse": rmse}

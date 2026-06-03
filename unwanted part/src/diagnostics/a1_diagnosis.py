@@ -187,8 +187,8 @@ def run_a1_diagnosis(data_path: str = "data/raw/AR_all_unique_parents_with_smile
     print("RUNNING ADENOSINE RECEPTOR DATA QUALITY DIAGNOSTICS")
     print("="*60)
     
-    # Load clean precise data
-    df, _ = load_and_clean(data_path, mode="precise")
+    # Load clean precise data with a custom lookup path to avoid overwriting master db_lookup.json
+    df, _ = load_and_clean(data_path, mode="precise", save_lookup_path="data/processed/db_lookup_actives_only.json")
     
     out_dir = Path("outputs/diagnostics")
     out_dir.mkdir(parents=True, exist_ok=True)

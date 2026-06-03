@@ -170,6 +170,26 @@ def load_and_clean(
                             "target_subtype": sub,
                             "standard_type": "DECOY",
                         })
+                        
+        # Ingest structural P2Y decoys recommended by professor to define GPCR class boundary
+        p2y_path = Path("data/processed/p2y_decoys.csv")
+        if p2y_path.exists():
+            print(f"[INFO] Ingesting structural P2Y decoys from {p2y_path}...")
+            p2y_df = pd.read_csv(p2y_path)
+            p2y_count = 0
+            for _, row in p2y_df.iterrows():
+                smiles = row["canonical_smiles"]
+                for sub in SUBTYPES:
+                    decoy_rows.append({
+                        "TAG": f"{sub}R",
+                        "canonical_smiles": smiles,
+                        "pchembl_value": 3.0,  # Decoy inactive affinity
+                        "target_subtype": sub,
+                        "standard_type": "DECOY_P2Y"
+                    })
+                    p2y_count += 1
+            print(f"[SUCCESS] Ingested {p2y_count} structural P2Y non-binder controls.")
+            
         if decoy_rows:
             decoy_df = pd.DataFrame(decoy_rows)
             df_deduped = pd.concat([df_deduped, decoy_df], ignore_index=True)

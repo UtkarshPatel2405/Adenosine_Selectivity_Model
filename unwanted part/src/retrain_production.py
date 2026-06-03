@@ -9,7 +9,7 @@ import xgboost as xgb
 from src.data_loader import load_and_clean
 from src.features import build_feature_matrix, build_features
 from src.conformal import train_conformal_model
-from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split, split_smiles_globally
 
 SUBTYPES = ["A1", "A2A", "A2B", "A3"]
 
@@ -23,7 +23,7 @@ DEFAULT_PARAMS = {
 
 def retrain_production_models(data_path: str = "data/raw/AR_all_unique_parents_with_smiles.csv"):
     print("\n" + "="*60)
-    print("PRODUCTION TRAINING WITH MAPIE CONFORMAL WRAPPING")
+    print("PRODUCTION TRAINING WITH MAPIE CONFORMAL WRAPPING (INCLUDING DECOYS)")
     print("="*60)
     
     # 1. Load best params from nested CV if available
@@ -42,17 +42,19 @@ def retrain_production_models(data_path: str = "data/raw/AR_all_unique_parents_w
         print("[INFO] No Nested CV HPO parameters found. Using robust scientific fallbacks...")
         best_params_per_subtype = DEFAULT_PARAMS
         
-    # 2. Load clean precise data
-    df, _ = load_and_clean(data_path, mode="precise")
+    # 2. Load precise data and programmatically generated decoys (binders whose value is 4.0 or less)
+    df, _ = load_and_clean(data_path, mode="precise", include_decoys=True)
     df = df.rename(columns={"canonical_smiles": "smiles"})
     
-    # 3. Create global scaffold split (80-20) to have test evaluations
-    train_df, test_df = scaffold_split(df, test_size=0.2, random_state=42, smiles_col="smiles")
+    # 3. Create global scaffold split (80-20) at the molecule level to prevent any target leakage
+    train_smiles, test_smiles = split_smiles_globally(df["smiles"].unique(), test_size=0.2, random_state=42)
+    train_df = df[df["smiles"].isin(train_smiles)].reset_index(drop=True)
+    test_df = df[df["smiles"].isin(test_smiles)].reset_index(drop=True)
     
-    # 4. Build features globally on precise dataset
+    # 4. Build features globally on precise + decoy dataset
     X_train_glob, X_test_glob, pipeline = build_feature_matrix(train_df, test_df, smiles_col="smiles")
     
-    # Save precise scalers
+    # Save precise + decoy scalers
     os.makedirs("models/precise", exist_ok=True)
     with open("models/precise/scaler_precise.pkl", "wb") as f:
         pickle.dump(pipeline, f)
@@ -91,6 +93,19 @@ def retrain_production_models(data_path: str = "data/raw/AR_all_unique_parents_w
         print(f"  Fitting conformal model CrossConformalRegressor(XGBoost, cv=5, method='plus')...")
         conformal_model = train_conformal_model(base_xgb, X_tr, y_tr, cv=5)
         
+        # Overfitting & performance checks
+        from sklearn.metrics import r2_score, mean_absolute_error
+        train_preds = conformal_model.predict(X_tr)
+        train_r2 = float(r2_score(y_tr, train_preds))
+        train_mae = float(mean_absolute_error(y_tr, train_preds))
+        
+        test_preds = conformal_model.predict(X_te)
+        test_r2 = float(r2_score(y_te, test_preds))
+        test_mae = float(mean_absolute_error(y_te, test_preds))
+        
+        print(f"  [DIAGNOSTIC] Train R² = {train_r2:.3f} | Test R² = {test_r2:.3f} (Gap: {train_r2 - test_r2:.3f})")
+        print(f"  [DIAGNOSTIC] Train MAE = {train_mae:.3f} | Test MAE = {test_mae:.3f}")
+        
         # Save model
         model_name = f"xgboost_precise_{st.lower()}_model.pkl"
         model_path = Path("models/precise") / model_name
@@ -110,3 +125,4 @@ def retrain_production_models(data_path: str = "data/raw/AR_all_unique_parents_w
 
 if __name__ == "__main__":
     retrain_production_models()
+

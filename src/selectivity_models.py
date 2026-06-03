@@ -9,7 +9,8 @@ from sklearn.metrics import mean_absolute_error, r2_score
 
 from src.data_loader import load_and_clean
 from src.features import build_feature_matrix, build_features
-from src.scaffold_split import scaffold_split
+from src.scaffold_split import scaffold_split, split_smiles_globally
+from src.predictor import _load_scaler
 
 SUBTYPES = ["A1", "A2A", "A2B", "A3"]
 
@@ -18,9 +19,17 @@ def build_selectivity_models(data_path: str = "data/raw/AR_all_unique_parents_wi
     print("TRAINING DIRECT SELECTIVITY MODELS (Delta-pChEMBL)")
     print("="*60)
     
+    # Load the production scaler pipeline fitted globally on all training data
+    try:
+        pipeline = _load_scaler("precise")
+        print("[INFO] Successfully loaded the global production scaler pipeline.")
+    except Exception as e:
+        print(f"[WARNING] Global scaler not found: {e}. Falling back to fitting scaler locally on each pair.")
+        pipeline = None
+        
     # 1. Load the processed DB lookup
     # Make sure we have the latest database lookup json
-    _, lookup = load_and_clean(data_path, mode="precise")
+    _, lookup = load_and_clean(data_path, mode="precise", include_decoys=True)
     
     # 2. Identify paired compounds for each pair
     pairs = [
@@ -63,11 +72,21 @@ def build_selectivity_models(data_path: str = "data/raw/AR_all_unique_parents_wi
             
         df_pair = pd.DataFrame(paired_data)
         
-        # 3. Scaffold split (80-20)
-        train_df, test_df = scaffold_split(df_pair, test_size=0.2, random_state=42, smiles_col="smiles")
+        # 3. Scaffold split (80-20) globally at the molecule level
+        train_smiles, test_smiles = split_smiles_globally(df_pair["smiles"].unique(), test_size=0.2, random_state=42)
+        train_df = df_pair[df_pair["smiles"].isin(train_smiles)].reset_index(drop=True)
+        test_df = df_pair[df_pair["smiles"].isin(test_smiles)].reset_index(drop=True)
         
-        # 4. Build features
-        X_train, X_test, pipeline = build_feature_matrix(train_df, test_df, smiles_col="smiles", save_to_disk=False)
+        # 4. Build features using the unified global pipeline
+        if pipeline is not None:
+            print("  Featurizing compounds using the global production pipeline...")
+            X_train = np.vstack([build_features(s, pipeline) for s in train_df["smiles"]])
+            X_test = np.vstack([build_features(s, pipeline) for s in test_df["smiles"]])
+            pair_pipeline = pipeline
+        else:
+            print("  [WARNING] Falling back to fitting pair-specific scaler pipeline...")
+            X_train, X_test, pair_pipeline = build_feature_matrix(train_df, test_df, smiles_col="smiles", save_to_disk=False)
+            
         y_train = train_df["delta_pchembl"].values
         y_test = test_df["delta_pchembl"].values
         
@@ -102,7 +121,7 @@ def build_selectivity_models(data_path: str = "data/raw/AR_all_unique_parents_wi
             
         pipeline_path = out_dir / f"xgb_selectivity_{pair_name}_pipeline.pkl"
         with open(pipeline_path, "wb") as f:
-            pickle.dump(pipeline, f)
+            pickle.dump(pair_pipeline, f)
             
         selectivity_summary[pair_name] = {
             "n_paired": n_paired,

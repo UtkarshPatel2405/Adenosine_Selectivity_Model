@@ -771,3 +771,23 @@ If an academic reviewer or professor evaluates this system, use the following po
 2. **conformal.py**: Highlight that point predictions do not indicate prediction confidence. Integrating MapieRegressor conformal intervals provides mathematically guaranteed bounds based on historical residuals, confirming the reliability of early-stage virtual screening.
 3. **selectivity_models.py**: Note that predicting selectivity via separate models accumulates individual errors. Dedicated delta models trained on the activity differences of co-assayed compounds cancel assay biases and improve selectivity screening accuracy.
 4. **y_randomization.py**: Mention that machine learning can learn dataset noise. Demonstrating that performance drops to zero when target values are shuffled confirms that the model relies on structural chemistry relationships.
+
+---
+
+# CHAPTER 14: Recent Upgrades, Flaw Remediations, and Decoy Ingestion
+
+### 14.1 Integrated Local SHAP Interpretation & Chemical Mapping
+We upgraded `streamlit_app.py` to map dry mathematical Morgan fingerprint bits back to:
+1. **SMARTS substructural fragments** (e.g., `[#6]:[#6](:[#6])-[#7]`), and
+2. **Physicochemical descriptors** with highly intuitive human-readable explanations.
+This bridges the gap between high-dimensional machine learning representations and medicinal chemistry intuition.
+
+### 14.2 Rigorous Remediations of Major Modeling Flaws
+To guarantee the model's integrity for academic peer review, we resolved the following key architectural issues:
+1. **Molecules-Level Global Scaffold Split**: Instead of splitting long-format datasets where the same compound could contaminate both training and test pipelines, the split is performed first at the unique parent SMILES level. This ensures that any given chemical skeleton resides entirely in either the training partition or the evaluation partition across all four GPCR subtype models.
+2. **Overfitting Diagnostics**: The evaluation pipeline now tracks and prints both **Train R²** and **Test R²** scores, as well as the generalization gap, to monitor and prevent memorization.
+3. **Inconsistent Scalers Unified**: Pairwise direct selectivity models now use the global model's standard scaler instead of independent sub-scalers, ensuring a unified, consistent feature space representation.
+
+### 14.3 Decoy Ingestion & Weak Binders Training
+We enabled the programmatic ingestion of mutual decoys/inactive controls during training. For compounds active on at least one adenosine subtype, the pipeline synthesizes non-binder control rows (pChEMBL ≤ 4.0, default 3.0) for the other untested/inactive subtypes. This provides the models with crucial negative training examples, mapping the bounds of the active pharmacophore and significantly reducing false-positive rates in virtual screens.
+

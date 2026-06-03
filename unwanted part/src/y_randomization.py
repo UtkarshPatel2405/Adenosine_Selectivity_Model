@@ -19,8 +19,8 @@ def run_y_randomization(subtype: str = "A2A", n_iterations: int = 20, data_path:
     print(f"Y-RANDOMIZATION TEST FOR {subtype} (n={n_iterations})")
     print("="*60)
     
-    # 1. Load clean precise data
-    df, _ = load_and_clean(data_path, mode="precise")
+    # 1. Load clean precise data with a custom lookup path to avoid overwriting master db_lookup.json
+    df, _ = load_and_clean(data_path, mode="precise", save_lookup_path="data/processed/db_lookup_actives_only.json")
     df_st = df[df["target_subtype"] == subtype].copy().reset_index(drop=True)
     
     if len(df_st) < 50:
