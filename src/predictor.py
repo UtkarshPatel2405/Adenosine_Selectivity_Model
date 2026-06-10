@@ -8,6 +8,17 @@ from typing import Any, Dict, Optional, Tuple
 from rdkit import Chem
 from src.features import build_features, _descriptors
 
+# Lazy GNN import
+def _try_gnn_predict(smiles, subtype):
+    try:
+        from src.gnn_model import predict_gnn
+        return predict_gnn(smiles, subtype)
+    except (ImportError, Exception):
+        return None
+
+from rdkit import Chem
+from src.features import build_features, _descriptors
+
 SUBTYPES = ["A1", "A2A", "A2B", "A3"]
 
 @lru_cache(maxsize=4)
@@ -33,38 +44,28 @@ def _load_db_lookup():
     p = Path("data/processed/db_lookup.json")
     return json.load(open(p, "r")) if p.exists() else {}
 
-@lru_cache(maxsize=4)
-def _load_models(mode: str = "precise"):
-    if mode == "pcm":
-        path = Path("models/pcm/xgboost_pcm_model.pkl")
-        if not path.exists():
-            raise FileNotFoundError(f"Unified PCM model NOT found at {path}")
-        with open(path, "rb") as f:
-            return pickle.load(f)
-            
+@lru_cache(maxsize=1)
+def _load_xgb_models():
     models = {}
-    model_dir = Path("models") / mode
-    
-    if not model_dir.exists():
-        model_dir = Path("models/precise")
-    if not model_dir.exists():
-        model_dir = Path("models")
-
     for st in SUBTYPES:
-        filename = model_dir / f"xgboost_{mode}_{st.lower()}_model.pkl"
+        filename = Path("models/precise") / f"xgboost_{st}_production.pkl"
         if not filename.exists():
-            filename = model_dir / f"xgboost_{st.lower()}_model.pkl"
+            filename = Path("models") / f"xgboost_{st}_production.pkl"
+        if filename.exists():
+            with open(filename, "rb") as f:
+                models[st] = pickle.load(f)
+    return models
+
+@lru_cache(maxsize=1)
+def _load_rf_models():
+    models = {}
+    for st in SUBTYPES:
+        filename = Path("models/precise") / f"rf_{st}_production.pkl"
         if not filename.exists():
-            filename = Path("models/precise") / f"xgboost_precise_{st.lower()}_model.pkl"
-        if not filename.exists():
-            filename = Path("models") / f"xgboost_{st.lower()}_model.pkl"
-        
-        if not filename.exists():
-            raise FileNotFoundError(f"Model file NOT found for {st} ({mode} mode)")
-            
-        with open(filename, "rb") as f:
-            models[st] = pickle.load(f)
-            
+            filename = Path("models") / f"rf_{st}_production.pkl"
+        if filename.exists():
+            with open(filename, "rb") as f:
+                models[st] = pickle.load(f)
     return models
 
 def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, float]:
@@ -107,14 +108,16 @@ def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, fl
         return pred, 0.0, pred, pred
 
 
-def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[str, Any]:
-    # Handle backward compatibility mapping for modes
-    if mode in ["standard", "strict"]:
-        mode = "precise"
-        
-    scaler = _load_scaler(mode)
+def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
     lookup = _load_db_lookup()
-    models = _load_models(mode=mode)
+    
+    try:
+        scaler = _load_scaler("precise")
+    except Exception:
+        scaler = None
+        
+    xgb_models = _load_xgb_models()
+    rf_models = _load_rf_models()
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None: 
@@ -129,55 +132,67 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
         "RotBonds": int(d_vals[4]), "AromRings": int(d_vals[5]), "TPSA": round(float(d_vals[6]), 2)
     }
 
-    preds, unc, intervals = {}, {}, {}
     in_db = canon in lookup
 
-    # 2. Bioactivity Predictions
+    preds = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
+    unc = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
+    intervals = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
+    
+    # Pre-computed docking scores if available
     docking_scores = None
-    if in_db:
-        exp = lookup[canon]
-        for st in SUBTYPES:
-            val = exp.get(st)
+    if in_db and isinstance(lookup[canon], dict) and "docking" in lookup[canon]:
+        docking_scores = lookup[canon]["docking"]
+
+    # Calculate features once
+    x = build_features(canon, scaler) if scaler is not None else None
+
+    # 2. Bioactivity Predictions
+    source = "database" if in_db else "model"
+    
+    for st in SUBTYPES:
+        if in_db:
+            val = lookup[canon].get(st)
             if pd.notna(val) and str(val).lower() != 'nan':
                 p_val = float(val)
-                preds[st], unc[st] = p_val, 0.0
-                intervals[st] = {"lower": p_val, "upper": p_val, "width": 0.0}
+                for model_name in preds:
+                    preds[model_name][st] = p_val
+                    unc[model_name][st] = 0.0
+                    intervals[model_name][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
             else:
-                preds[st], unc[st] = 0.0, 0.0
-                intervals[st] = {"lower": 0.0, "upper": 0.0, "width": 0.0}
-        
-        # Pull pre-computed docking scores if available in the database
-        if isinstance(exp, dict) and "docking" in exp:
-            docking_scores = exp["docking"]
-        source = "database"
-    else:
-        x = build_features(canon, scaler)
-        if mode == "pcm":
-            idx_map = {st: i for i, st in enumerate(SUBTYPES)}
-            for st in SUBTYPES:
-                one_hot = np.zeros((len(SUBTYPES),), dtype=np.float32)
-                one_hot[idx_map[st]] = 1.0
-                x_pcm = np.hstack([x, one_hot]).reshape(1, -1)
-                
-                m, s, low, high = _ensemble_predict(models, x_pcm)
-                preds[st], unc[st] = m, s
-                intervals[st] = {
-                    "lower": round(low, 3), 
-                    "upper": round(high, 3), 
-                    "width": round(high - low, 3)
-                }
+                for model_name in preds:
+                    preds[model_name][st] = 0.0
+                    unc[model_name][st] = 0.0
+                    intervals[model_name][st] = {"lower": 0.0, "upper": 0.0, "width": 0.0}
         else:
-            for st in SUBTYPES:
-                m, s, low, high = _ensemble_predict(models[st], x)
-                preds[st], unc[st] = m, s
-                intervals[st] = {
-                    "lower": round(low, 3), 
-                    "upper": round(high, 3), 
-                    "width": round(high - low, 3)
-                }
-        source = "model"
+            # XGBoost
+            if st in xgb_models and x is not None:
+                m, s, low, high = _ensemble_predict(xgb_models[st], x)
+                preds["XGBoost"][st] = m
+                unc["XGBoost"][st] = s
+                intervals["XGBoost"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+            else:
+                preds["XGBoost"][st], unc["XGBoost"][st], intervals["XGBoost"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+                
+            # Random Forest
+            if st in rf_models and x is not None:
+                m, s, low, high = _ensemble_predict(rf_models[st], x)
+                preds["RandomForest"][st] = m
+                unc["RandomForest"][st] = s
+                intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+            else:
+                preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+                
+            # PyTorch (GNN)
+            pred_val = _try_gnn_predict(canon, st)
+            if pred_val is not None:
+                m = float(pred_val)
+                preds["PyTorch"][st] = m
+                unc["PyTorch"][st] = 0.0
+                intervals["PyTorch"][st] = {"lower": m, "upper": m, "width": 0.0}
+            else:
+                preds["PyTorch"][st], unc["PyTorch"][st], intervals["PyTorch"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
-    # 3. Direct Selectivity Predictions
+    # 3. Direct Selectivity Predictions (using XGBoost predictions for best_target logic)
     selectivity = {}
     pairs = [("A2A", "A1"), ("A2A", "A3")]
     try:
@@ -189,6 +204,13 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
     except Exception:
         pass
 
+    # Compute best target and target hits based on XGBoost (as primary) or any other logic
+    # We will use XGBoost as the reference for best target
+    xgb_preds = preds["XGBoost"]
+    
+    # If XGBoost prediction is available, use it. Otherwise fallback to PyTorch
+    ref_preds = xgb_preds if sum(xgb_preds.values()) > 0 else preds["PyTorch"]
+
     return {
         "smiles": canon, 
         "in_database": in_db, 
@@ -197,8 +219,8 @@ def predict(smiles: str, threshold: float = 6.0, mode: str = "precise") -> Dict[
         "uncertainty": unc,
         "intervals": intervals,
         "selectivity_profile": selectivity,
-        "best_target": max(preds, key=preds.get),
-        "target_hits": [st for st, v in preds.items() if v >= threshold],
+        "best_target": max(ref_preds, key=ref_preds.get) if ref_preds else None,
+        "target_hits": [st for st, v in ref_preds.items() if v >= threshold] if ref_preds else [],
         "source": source,
         "docking_scores": docking_scores
     }

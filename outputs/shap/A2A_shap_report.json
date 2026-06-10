@@ -5,59 +5,60 @@
     {
       "rank": 1,
       "feature": "MACCS_84",
-      "mean_abs_shap": 0.6190442442893982
+      "mean_abs_shap": 0.37914735078811646
     },
     {
       "rank": 2,
       "feature": "MACCS_25",
-      "mean_abs_shap": 0.25270935893058777
+      "mean_abs_shap": 0.32455945014953613
     },
     {
       "rank": 3,
       "feature": "Morgan_FP_1457",
-      "mean_abs_shap": 0.19772648811340332
+      "mean_abs_shap": 0.1429518759250641
     },
     {
       "rank": 4,
-      "feature": "Morgan_FP_1171",
-      "mean_abs_shap": 0.1437065154314041
+      "feature": "Morgan_FP_121",
+      "mean_abs_shap": 0.11602353304624557
     },
     {
       "rank": 5,
       "feature": "MaxPartialCharge",
-      "mean_abs_shap": 0.10753357410430908
+      "mean_abs_shap": 0.10889752954244614
     },
     {
       "rank": 6,
-      "feature": "Morgan_FP_131",
-      "mean_abs_shap": 0.08545581251382828
+      "feature": "NumAromaticHeterocycles",
+      "mean_abs_shap": 0.06498578190803528
     },
     {
       "rank": 7,
-      "feature": "MACCS_91",
-      "mean_abs_shap": 0.07391142845153809
+      "feature": "Morgan_FP_1171",
+      "mean_abs_shap": 0.0592423677444458
     },
     {
       "rank": 8,
-      "feature": "Morgan_FP_1731",
-      "mean_abs_shap": 0.07004152238368988
+      "feature": "MolLogP",
+      "mean_abs_shap": 0.0546889565885067
     },
     {
       "rank": 9,
-      "feature": "MACCS_100",
-      "mean_abs_shap": 0.06927727162837982
+      "feature": "Morgan_FP_474",
+      "mean_abs_shap": 0.05322077497839928
     },
     {
       "rank": 10,
-      "feature": "MolLogP",
-      "mean_abs_shap": 0.05179765447974205
+      "feature": "Morgan_FP_1777",
+      "mean_abs_shap": 0.0439189076423645
     }
   ],
   "sanity_check": {
     "status": "PASS",
     "message": "Top features are dominated by structurally relevant physicochemical properties.",
     "expected_features_found": [
-      "LogP"
+      "LogP",
+      "MolLogP"
     ]
   }
 }

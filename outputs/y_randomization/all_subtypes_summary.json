@@ -1,0 +1,35 @@
+{
+  "n_subtypes_validated": 4,
+  "subtypes": [
+    "A1",
+    "A2A",
+    "A2B",
+    "A3"
+  ],
+  "summary": {
+    "A1": {
+      "real_r2": 0.4014847303872733,
+      "shuffled_r2_mean": -0.1291668709888743,
+      "shuffled_r2_std": 0.03217885203299624,
+      "leakage_warning": false
+    },
+    "A2A": {
+      "real_r2": 0.5628010627393033,
+      "shuffled_r2_mean": -0.13068097868112308,
+      "shuffled_r2_std": 0.05087384730050421,
+      "leakage_warning": false
+    },
+    "A2B": {
+      "real_r2": 0.4550305614190788,
+      "shuffled_r2_mean": -0.24122877271250145,
+      "shuffled_r2_std": 0.08343714045719557,
+      "leakage_warning": false
+    },
+    "A3": {
+      "real_r2": 0.6596297392631456,
+      "shuffled_r2_mean": -0.1796812443588115,
+      "shuffled_r2_std": 0.0538309083693771,
+      "leakage_warning": false
+    }
+  }
+}

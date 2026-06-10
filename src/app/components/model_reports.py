@@ -56,6 +56,7 @@ def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[
         "RMSE": round(overall.get("model_rmse", 0), 4),
         "R2": round(overall.get("model_r2", 0), 4),
         "Baseline R2": round(overall.get("baseline_r2", 0), 4),
+        "Conformal Coverage (90%)": f"{overall.get('conformal_coverage_90', 0.0) * 100:.1f}%" if overall.get("conformal_coverage_90") is not None else "N/A",
     }])
 
     per = report.get("per_subtype", {})
@@ -67,6 +68,7 @@ def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[
             "MAE": round(m.get("model_mae", 0), 4),
             "RMSE": round(m.get("model_rmse", 0), 4),
             "R2": round(m.get("model_r2", 0), 4),
+            "Conformal Coverage (90%)": f"{m.get('conformal_coverage_90', 0.0) * 100:.1f}%" if m.get("conformal_coverage_90") is not None else "N/A",
             "n_test": m.get("n_test"),
         })
     per_df = pd.DataFrame(rows).sort_values("Subtype") if rows else pd.DataFrame()

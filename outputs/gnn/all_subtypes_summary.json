@@ -1,0 +1,46 @@
+{
+  "model": "MPNN/GINE (PyTorch Geometric)",
+  "n_subtypes": 4,
+  "results": {
+    "A1": {
+      "subtype": "A1",
+      "model": "MPNN/GINE",
+      "r2": 0.2606023141470518,
+      "mae": 0.736485771724156,
+      "rmse": 0.9741484186422124,
+      "best_epoch": 28,
+      "train_size": 3883,
+      "test_size": 875
+    },
+    "A2A": {
+      "subtype": "A2A",
+      "model": "MPNN/GINE",
+      "r2": 0.20813924540397832,
+      "mae": 0.866132874846895,
+      "rmse": 1.0868212701466007,
+      "best_epoch": 6,
+      "train_size": 5107,
+      "test_size": 1092
+    },
+    "A2B": {
+      "subtype": "A2B",
+      "model": "MPNN/GINE",
+      "r2": 0.3013980354920677,
+      "mae": 0.6258167496149689,
+      "rmse": 0.7961472964065506,
+      "best_epoch": 17,
+      "train_size": 1949,
+      "test_size": 497
+    },
+    "A3": {
+      "subtype": "A3",
+      "model": "MPNN/GINE",
+      "r2": 0.3728827047633032,
+      "mae": 0.7334782490323357,
+      "rmse": 0.9449228767502578,
+      "best_epoch": 44,
+      "train_size": 4135,
+      "test_size": 914
+    }
+  }
+}

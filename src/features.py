@@ -7,9 +7,7 @@ import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Descriptors, Lipinski, MACCSkeys
 from sklearn.preprocessing import StandardScaler
-from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
-
-_MORGAN = GetMorganGenerator(radius=2, fpSize=2048)
+from rdkit.Chem import rdFingerprintGenerator
 
 
 class FeatureFilter:
@@ -115,7 +113,8 @@ def _morgan_bits(smiles: str, n_bits: int = 2048) -> np.ndarray:
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
 
-    fp = _MORGAN.GetFingerprint(mol)  # ExplicitBitVect
+    generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=n_bits)
+    fp = generator.GetFingerprint(mol)  # ExplicitBitVect
     arr = np.zeros((n_bits,), dtype=np.uint8)
     DataStructs.ConvertToNumpyArray(fp, arr)
     return arr
@@ -166,12 +165,25 @@ def _descriptors(smiles: str) -> np.ndarray:
     return np.array([mw, logp, hbd, hba, rot, arom, tpsa], dtype=np.float32)
 
 
+_DESC_FUNCS = {}
+for name in CURATED_DESCRIPTORS_LIST:
+    func = getattr(Descriptors, name, None)
+    if func is None:
+        func = getattr(Lipinski, name, None)
+    _DESC_FUNCS[name] = func
+
+
 def _all_descriptors(smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
-    desc_dict = Descriptors.CalcMolDescriptors(mol)
-    vals = [float(desc_dict[k]) if desc_dict[k] is not None else np.nan for k in CURATED_DESCRIPTORS_LIST]
+    vals = []
+    for name in CURATED_DESCRIPTORS_LIST:
+        func = _DESC_FUNCS.get(name)
+        if func is not None:
+            vals.append(float(func(mol)))
+        else:
+            vals.append(np.nan)
     return np.array(vals, dtype=np.float32)
 
 
@@ -183,27 +195,35 @@ def _all_descriptors_names() -> list:
 def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles", save_to_disk: bool = True):
     train_smiles = train_df[smiles_col].tolist()
     test_smiles = test_df[smiles_col].tolist()
+    from joblib import Parallel, delayed
 
     print("[INFO] Computing Morgan fingerprints...")
-    Xfp_train = np.vstack([_morgan_bits(s) for s in train_smiles])
-    Xfp_test = np.vstack([_morgan_bits(s) for s in test_smiles])
+    Xfp_train = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in train_smiles))
+    Xfp_test = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in test_smiles))
 
     print("[INFO] Computing MACCS keys...")
-    Xmaccs_train = np.vstack([_maccs_bits(s) for s in train_smiles])
-    Xmaccs_test = np.vstack([_maccs_bits(s) for s in test_smiles])
+    Xmaccs_train = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in train_smiles))
+    Xmaccs_test = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in test_smiles))
 
     X_fp_train = np.hstack([Xfp_train, Xmaccs_train])
     X_fp_test = np.hstack([Xfp_test, Xmaccs_test])
 
     # Cache RDKit bitvectors for fast AD at inference
-    train_fps = [_MORGAN.GetFingerprint(Chem.MolFromSmiles(s)) for s in train_smiles]
+    def _get_fp(s):
+        mol = Chem.MolFromSmiles(s)
+        if mol:
+            generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+            return generator.GetFingerprint(mol)
+        return None
+    train_fps = Parallel(n_jobs=-1)(delayed(_get_fp)(s) for s in train_smiles)
+    
     if save_to_disk:
         with open("data/processed/train_fps.pkl", "wb") as f:
             pickle.dump(train_fps, f)
 
     print(f"[INFO] Computing curated RDKit descriptors ({len(CURATED_DESCRIPTORS_LIST)})...")
-    Xdesc_train = np.vstack([_all_descriptors(s) for s in train_smiles])
-    Xdesc_test = np.vstack([_all_descriptors(s) for s in test_smiles])
+    Xdesc_train = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in train_smiles))
+    Xdesc_test = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in test_smiles))
 
     print("[INFO] Filtering descriptors (NaN, Variance, Correlation)...")
     desc_names = _all_descriptors_names()

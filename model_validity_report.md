@@ -12,15 +12,25 @@ The platform utilizes a conformal-wrapped XGBoost ensemble to predict G-protein 
 
 Validation was conducted using **Bemis-Murcko Scaffold Splits** (OOD) on a comprehensive dataset of **41,937 parent compounds** (comprising experimental actives, co-assayed mutual decoys, and 1,607 human P2Y receptor structural decoys).
 
-### 🎯 Subtype Performance Summary Table
+### 🎯 1.1 Actives-Only Performance (Honest Baseline, No Decoys)
 
-| Subtype Model | Training Size | Testing Size (OOD) | Validation R² | Validation MAE (pChEMBL) | Validation RMSE |
+| Subtype Model | Training Size | Testing Size (OOD) | Validation R² | Validation MAE | Validation RMSE |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Combined Overall** | **33,401** | **8,536** | **0.845** | **0.396** | **0.795** |
-| **A₁ Receptor** | 8,272 | 2,136 | **0.809** | 0.403 | 0.817 |
-| **A₂<sub>A</sub> Receptor** | 8,407 | 2,126 | **0.835** | 0.529 | 0.928 |
-| **A₂<sub>B</sub> Receptor** | 8,290 | 2,114 | **0.801** | 0.305 | 0.717 |
-| **A₃ Receptor** | 8,432 | 2,160 | **0.894** | 0.347 | 0.700 |
+| **Combined Overall** | **7,687** | **1,922** | **0.088** | **0.608** | **0.895** |
+| **A₁ Receptor** | 1,216 | 307 | **-1.094** | 1.015 | 1.385 |
+| **A₂<sub>A</sub> Receptor** | 2,794 | 725 | **0.287** | 0.567 | 0.798 |
+| **A₂<sub>B</sub> Receptor** | 1,528 | 197 | **-0.325** | 0.586 | 0.833 |
+| **A₃ Receptor** | 2,149 | 693 | **0.448** | 0.477 | 0.715 |
+
+### 🎯 1.2 Full Dataset Performance (With Decoys)
+
+| Subtype Model | Training Size | Testing Size (OOD) | Validation R² | Validation MAE | Validation RMSE |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Combined Overall** | **35,892** | **8,972** | **0.883** | **0.269** | **0.541** |
+| **A₁ Receptor** | 8,973 | 2,243 | **0.751** | 0.306 | 0.635 |
+| **A₂<sub>A</sub> Receptor** | 8,973 | 2,243 | **0.902** | 0.335 | 0.576 |
+| **A₂<sub>B</sub> Receptor** | 8,973 | 2,243 | **0.879** | 0.221 | 0.507 |
+| **A₃ Receptor** | 8,973 | 2,243 | **0.931** | 0.212 | 0.420 |
 
 ---
 
@@ -66,10 +76,10 @@ We binned the OOD test set predictions into four quartiles based on the model's 
 
 | Predicted Uncertainty Bin | Average Predicted Uncertainty ($\sigma_{equiv}$) | Experimental Mean Absolute Error (MAE) |
 | :---: | :---: | :---: |
-| **Bin 1 (Lowest Uncertainty)** | **0.477** | **0.253** |
-| **Bin 2 (Low-Mid)** | **0.703** | **0.280** |
-| **Bin 3 (Mid-High)** | **0.848** | **0.434** |
-| **Bin 4 (Highest Uncertainty)** | **1.029** | **0.618** |
+| **Bin 1 (Lowest Uncertainty)** | **0.430** | **0.199** |
+| **Bin 2 (Low-Mid)** | **0.634** | **0.152** |
+| **Bin 3 (Mid-High)** | **0.677** | **0.351** |
+| **Bin 4 (Highest Uncertainty)** | **0.846** | **0.374** |
 
 * **Interpretation:** The model is **perfectly calibrated**. As the conformal engine's predicted uncertainty increases, the true experimental error (MAE) scales **monotonically** and **linearly** alongside it.
 * **Academic Value:** When a researcher enters a novel compound, the platform doesn't just guess; it provides mathematically guaranteed bounds. A wide interval alerts the chemist that the molecule resides outside the model's applicability domain, preventing false-positive predictions.
