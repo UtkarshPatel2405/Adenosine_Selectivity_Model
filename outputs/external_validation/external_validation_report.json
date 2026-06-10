@@ -1,0 +1,32 @@
+{
+  "n_novel_molecules": 15,
+  "n_successful_predictions": 15,
+  "n_errors": 0,
+  "per_subtype_metrics": {
+    "A1": {
+      "n": 3,
+      "insufficient_data": true
+    },
+    "A2A": {
+      "n": 6,
+      "r2": 0.5446075465558957,
+      "mae": 0.8119696458180745,
+      "rmse": 0.9696694892891808
+    },
+    "A2B": {
+      "n": 4,
+      "insufficient_data": true
+    },
+    "A3": {
+      "n": 7,
+      "r2": 0.8279358448566355,
+      "mae": 0.37165974208286834,
+      "rmse": 0.4580150747956816
+    },
+    "selectivity_recall_at_1": {
+      "correct": 3,
+      "total": 4,
+      "accuracy": 0.75
+    }
+  }
+}

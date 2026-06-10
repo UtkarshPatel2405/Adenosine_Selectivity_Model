@@ -1,0 +1,63 @@
+{
+  "subtype": "A1",
+  "mode": "precise",
+  "top_features": [
+    {
+      "rank": 1,
+      "feature": "Morgan_FP_358",
+      "mean_abs_shap": 0.1279166340827942
+    },
+    {
+      "rank": 2,
+      "feature": "MaxPartialCharge",
+      "mean_abs_shap": 0.10305841267108917
+    },
+    {
+      "rank": 3,
+      "feature": "MolWt",
+      "mean_abs_shap": 0.08980656415224075
+    },
+    {
+      "rank": 4,
+      "feature": "Morgan_FP_860",
+      "mean_abs_shap": 0.07780712842941284
+    },
+    {
+      "rank": 5,
+      "feature": "MACCS_38",
+      "mean_abs_shap": 0.06612598150968552
+    },
+    {
+      "rank": 6,
+      "feature": "MACCS_86",
+      "mean_abs_shap": 0.0603056401014328
+    },
+    {
+      "rank": 7,
+      "feature": "Morgan_FP_1805",
+      "mean_abs_shap": 0.057267770171165466
+    },
+    {
+      "rank": 8,
+      "feature": "FractionCSP3",
+      "mean_abs_shap": 0.05715540051460266
+    },
+    {
+      "rank": 9,
+      "feature": "Kappa3",
+      "mean_abs_shap": 0.051103346049785614
+    },
+    {
+      "rank": 10,
+      "feature": "MACCS_157",
+      "mean_abs_shap": 0.04488266259431839
+    }
+  ],
+  "sanity_check": {
+    "status": "PASS",
+    "message": "Top features are dominated by structurally relevant physicochemical properties.",
+    "expected_features_found": [
+      "MolWt"
+    ]
+  }
+}

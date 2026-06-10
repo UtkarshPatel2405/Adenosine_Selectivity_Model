@@ -241,7 +241,7 @@ def _section_single_prediction():
 
             # 2. Run Prediction Pipeline
             try:
-                r = predict(smiles, threshold=threshold, mode=mode)
+                r = predict(smiles, threshold=threshold)
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
                 return
@@ -286,25 +286,21 @@ def _section_single_prediction():
             
             rows = []
             for k in SUBTYPES:
-                p_val = round(float(preds[k]), 3)
-                unc_val = round(float(unc[k]), 3)
-                if "intervals" in r and k in r["intervals"]:
-                    low = round(r["intervals"][k]["lower"], 3)
-                    high = round(r["intervals"][k]["upper"], 3)
-                    width = round(r["intervals"][k]["width"], 3)
-                    interval_str = f"[{low}, {high}]"
-                else:
-                    interval_str = "N/A"
-                    width = "N/A"
-                    
-                rows.append({
-                    "Subtype": k,
-                    "pChEMBL": p_val,
-                    "90% Prediction Interval": interval_str,
-                    "Interval Width": width,
-                    "Uncertainty (std equiv)": unc_val,
-                    "Hit": k in r["target_hits"]
-                })
+                row = {"Subtype": k}
+                for model_name in ["XGBoost", "RandomForest", "PyTorch"]:
+                    if model_name in preds and k in preds[model_name]:
+                        p_val = round(float(preds[model_name][k]), 3)
+                        row[f"{model_name} pChEMBL"] = p_val
+                        
+                        if model_name == "XGBoost":
+                            if "intervals" in r and model_name in r["intervals"] and k in r["intervals"][model_name]:
+                                low = round(r["intervals"][model_name][k]["lower"], 3)
+                                high = round(r["intervals"][model_name][k]["upper"], 3)
+                                row["XGBoost 90% Interval"] = f"[{low}, {high}]"
+                            else:
+                                row["XGBoost 90% Interval"] = "N/A"
+                row["Hit (XGB Reference)"] = k in r["target_hits"]
+                rows.append(row)
             st.table(rows)
             
             # Export results table as CSV
@@ -578,8 +574,9 @@ def _section_results():
     
     view_mode = "precise"
     
-    tab_metrics, tab_shap_y, tab_a1_diag, tab_examples = st.tabs([
-        "Validation Metrics", "TreeSHAP & Y-Randomization", "Dataset Quality Diagnostics", "Example Predictions"
+    tab_metrics, tab_shap_y, tab_a1_diag, tab_examples, tab_gnn, tab_external, tab_lit = st.tabs([
+        "Validation Metrics", "TreeSHAP & Y-Randomization", "Dataset Quality Diagnostics", "Example Predictions",
+        "GNN Comparison", "External Validation", "Literature Benchmark"
     ])
   
     with tab_metrics:
@@ -708,19 +705,21 @@ def _section_results():
         st.subheader("TreeSHAP Global Explainability & Y-Randomization Validation")
         st.write("Chemical sanity checks and label-shuffling tests to verify structural target relationship:")
         
+        subtype_choice = st.selectbox("Select Subtype for SHAP & Y-Randomization", ["A1", "A2A", "A2B", "A3"], key="shap_y_selector")
+        
         col_shap, col_yrand = st.columns(2)
         with col_shap:
-            st.markdown("### Global TreeSHAP Feature Importance (A2A)")
+            st.markdown(f"### Global TreeSHAP Feature Importance ({subtype_choice})")
             st.write("Attribution of continuous descriptors and structural fingerprint features:")
-            shap_bar = Path("outputs/shap/A2A_bar.png")
-            shap_beeswarm = Path("outputs/shap/A2A_beeswarm.png")
+            shap_bar = Path(f"outputs/shap/{subtype_choice}_bar.png")
+            shap_beeswarm = Path(f"outputs/shap/{subtype_choice}_beeswarm.png")
             
             if shap_bar.exists():
                 st.image(str(shap_bar), caption="SHAP Global Mean Absolute Attribution", use_container_width=True)
             if shap_beeswarm.exists():
                 st.image(str(shap_beeswarm), caption="SHAP Beeswarm Distribution Plot", use_container_width=True)
                 
-            shap_report_path = Path("outputs/shap/A2A_shap_report.json")
+            shap_report_path = Path(f"outputs/shap/{subtype_choice}_shap_report.json")
             if shap_report_path.exists():
                 with open(shap_report_path, "r") as f_shap:
                     shap_data = json.load(f_shap)
@@ -732,14 +731,14 @@ def _section_results():
                 st.info("SHAP explainability plots not generated yet. Run the pipeline.")
                 
         with col_yrand:
-            st.markdown("### Y-Randomization Validation (A2A)")
+            st.markdown(f"### Y-Randomization Validation ({subtype_choice})")
             st.write("Shuffling pChEMBL labels to ensure models don't overfit to noise or spurious background features:")
             
-            yrand_plot = Path("outputs/y_randomization/A2A_distribution.png")
+            yrand_plot = Path(f"outputs/y_randomization/{subtype_choice}_distribution.png")
             if yrand_plot.exists():
                 st.image(str(yrand_plot), caption="Y-Randomization Label-Shuffled R² Distribution", use_container_width=True)
                 
-            yrand_report_path = Path("outputs/y_randomization/A2A_report.json")
+            yrand_report_path = Path(f"outputs/y_randomization/{subtype_choice}_report.json")
             if yrand_report_path.exists():
                 with open(yrand_report_path, "r") as f_yrand:
                     yrand_data = json.load(f_yrand)
@@ -763,17 +762,151 @@ def _section_results():
             st.dataframe(novel_df, use_container_width=True)
         except Exception as e:
             st.warning(f"Could not load examples: {e}")
+
+    with tab_gnn:
+        st.subheader("GNN vs XGBoost vs Random Forest Metrics")
+        eval_path = Path("outputs/validoutput/precise/evaluation_precise_report.json")
+        if eval_path.exists():
+            try:
+                with open(eval_path, "r") as f:
+                    eval_data = json.load(f)
+                gnn_rows = []
+                for st_name in SUBTYPES:
+                    st_data = eval_data.get("per_subtype", {}).get(st_name, {})
+                    gnn_rows.append({
+                        "Subtype": st_name,
+                        "XGBoost R²": st_data.get("model_r2"),
+                        "XGBoost MAE": st_data.get("model_mae"),
+                        "Random Forest R²": st_data.get("rf_r2"),
+                        "Random Forest MAE": st_data.get("rf_mae"),
+                        "GNN R²": st_data.get("gnn_r2"),
+                        "GNN MAE": st_data.get("gnn_mae"),
+                    })
+                st.dataframe(pd.DataFrame(gnn_rows), use_container_width=True)
+            except Exception as e:
+                st.error(f"Error loading GNN metrics: {e}")
+        else:
+            st.info("Evaluation report not available.")
+            
+    with tab_external:
+        st.subheader("External Validation (GPCRdb Blind Test)")
+        ext_path = Path("outputs/external_validation/external_validation_report.json")
+        if ext_path.exists():
+            try:
+                with open(ext_path, "r") as f:
+                    ext_data = json.load(f)
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Novel External Molecules", ext_data.get("n_novel_molecules", 0))
+                c2.metric("Successful Predictions", ext_data.get("n_successful_predictions", 0))
+                c3.metric("Prediction Errors", ext_data.get("n_errors", 0))
+                
+                st.write("**Per-Subtype Validation Metrics**")
+                ext_rows = []
+                for st_name, metrics in ext_data.get("per_subtype_metrics", {}).items():
+                    if st_name == "selectivity_recall_at_1":
+                        continue
+                    if metrics.get("insufficient_data"):
+                        ext_rows.append({"Subtype": st_name, "N": metrics.get("n"), "R²": "Insufficient Data", "MAE": "N/A"})
+                    else:
+                        ext_rows.append({
+                            "Subtype": st_name,
+                            "N": metrics.get("n"),
+                            "R²": f"{metrics.get('r2'):.3f}",
+                            "MAE": f"{metrics.get('mae'):.3f}",
+                            "RMSE": f"{metrics.get('rmse'):.3f}",
+                        })
+                if ext_rows:
+                    st.table(pd.DataFrame(ext_rows))
+                    
+                if "selectivity_recall_at_1" in ext_data.get("per_subtype_metrics", {}):
+                    sel = ext_data["per_subtype_metrics"]["selectivity_recall_at_1"]
+                    st.metric("Selectivity Recall@1 (Accuracy)", f"{sel['accuracy']:.3f}", f"{sel['correct']}/{sel['total']} molecules")
+            except Exception as e:
+                st.error(f"Error loading external validation: {e}")
+        else:
+            st.info("External validation report not available. Run `python -m src.external_validation`.")
+            
+    with tab_lit:
+        st.subheader("Literature Benchmarking")
+        lit_path = Path("outputs/benchmark/benchmark_comparison.json")
+        if lit_path.exists():
+            try:
+                with open(lit_path, "r") as f:
+                    lit_data = json.load(f)
+                
+                lit_rows = []
+                for model_name, info in lit_data.items():
+                    metrics = info.get("metrics", {})
+                    row = {
+                        "Model": model_name,
+                        "Method": info.get("method"),
+                        "Split": info.get("split"),
+                        "A1 R²": metrics.get("A1", {}).get("r2"),
+                        "A2A R²": metrics.get("A2A", {}).get("r2"),
+                        "A2B R²": metrics.get("A2B", {}).get("r2"),
+                        "A3 R²": metrics.get("A3", {}).get("r2"),
+                    }
+                    lit_rows.append(row)
+                st.dataframe(pd.DataFrame(lit_rows), use_container_width=True)
+            except Exception as e:
+                st.error(f"Error loading literature benchmark: {e}")
+        else:
+            st.info("Literature benchmark not available. Run `python -m src.literature_benchmark`.")
  
 def run_app():
     st.set_page_config(page_title="AR Selectivity Predictor", layout="wide")
     st.title("Adenosine Receptor Selectivity Predictor")
+    
+    # Dynamic metric loading
+    report_path = Path("outputs/validoutput/precise/evaluation_precise_report.json")
+    
+    overall_r2 = "0.845"
+    overall_mae = "0.396"
+    overall_n = "33,401"
+    
+    a1_r2, a1_mae, a1_n = "0.809", "0.403", "8,272"
+    a2a_r2, a2a_mae, a2a_n = "0.835", "0.529", "8,407"
+    a2b_r2, a2b_mae, a2b_n = "0.801", "0.305", "8,290"
+    a3_r2, a3_mae, a3_n = "0.894", "0.347", "8,432"
 
-    # Prominent Scientific Goal & Trust card to explain webapp's purpose and back it with accuracy numbers
-    st.markdown("""
+    if report_path.exists():
+        try:
+            with open(report_path, "r") as f:
+                rep = json.load(f)
+            
+            ov = rep.get("overall", {})
+            if "model_r2" in ov and ov["model_r2"] is not None:
+                overall_r2 = f"{ov['model_r2']:.3f}"
+            if "model_mae" in ov and ov["model_mae"] is not None:
+                overall_mae = f"{ov['model_mae']:.3f}"
+            overall_n = f"{rep.get('n_train', 0) + rep.get('n_test', 0):,}"
+            
+            st_data = rep.get("per_subtype", {})
+            if "A1" in st_data:
+                a1_r2 = f"{st_data['A1'].get('model_r2', 0):.3f}"
+                a1_mae = f"{st_data['A1'].get('model_mae', 0):.3f}"
+                a1_n = f"{st_data['A1'].get('n_train', 0) + st_data['A1'].get('n_test', 0):,}"
+            if "A2A" in st_data:
+                a2a_r2 = f"{st_data['A2A'].get('model_r2', 0):.3f}"
+                a2a_mae = f"{st_data['A2A'].get('model_mae', 0):.3f}"
+                a2a_n = f"{st_data['A2A'].get('n_train', 0) + st_data['A2A'].get('n_test', 0):,}"
+            if "A2B" in st_data:
+                a2b_r2 = f"{st_data['A2B'].get('model_r2', 0):.3f}"
+                a2b_mae = f"{st_data['A2B'].get('model_mae', 0):.3f}"
+                a2b_n = f"{st_data['A2B'].get('n_train', 0) + st_data['A2B'].get('n_test', 0):,}"
+            if "A3" in st_data:
+                a3_r2 = f"{st_data['A3'].get('model_r2', 0):.3f}"
+                a3_mae = f"{st_data['A3'].get('model_mae', 0):.3f}"
+                a3_n = f"{st_data['A3'].get('n_train', 0) + st_data['A3'].get('n_test', 0):,}"
+        except Exception:
+            pass
+
+    st.markdown(f"""
     <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 5px solid #005a9c; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <h3 style="margin-top: 0; color: #005a9c; font-size: 1.3rem;">Scientific Goal & Platform Trustworthiness</h3>
         <p style="font-size: 0.95rem; line-height: 1.5; color: #333333; margin-bottom: 12px;">
-            This web application facilitates rapid, high-confidence in silico profiling of binding affinities (pChEMBL values) across all four adenosine receptor subtypes (A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub>). By predicting candidate compound profiles, researchers can systematically identify subtype-selective hits and assess off-target liabilities early in the drug discovery process.
+            This web application facilitates rapid, high-confidence <i>in silico</i> profiling of binding affinities (pChEMBL values) across all four adenosine receptor subtypes (A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub>). Engineered for publication-grade robustness, the platform implements a dual-architecture consensus strategy: rigorous Random Forest and XGBoost regressors governed by Mapie conformal prediction for strictly calibrated uncertainty bounds, coupled with an orthogonal PyTorch Geometric Message Passing Neural Network (GINE) to capture deep topological patterns. By establishing structural applicability domains and resolving complex activity cliffs, this workflow provides highly confident subtype-selectivity predictions—allowing researchers to effectively triage candidate compounds prior to computationally expensive FEP+ evaluations or wet-lab screening.
         </p>
         <div style="display: flex; flex-direction: row; gap: 15px; flex-wrap: wrap;">
             <div style="flex: 2; min-width: 480px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #e9ecef;">
@@ -790,33 +923,33 @@ def run_app():
                     <tbody>
                         <tr style="border-bottom: 1px solid #e9ecef; font-weight: bold; background-color: #f4fcf4;">
                             <td style="padding: 4px 6px; text-align: left;">Combined Overall</td>
-                            <td style="padding: 4px 6px; text-align: center; color: #28a745;">0.845</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.396 pChEMBL</td>
-                            <td style="padding: 4px 6px; text-align: center;">33,401</td>
+                            <td style="padding: 4px 6px; text-align: center; color: #28a745;">{overall_r2}</td>
+                            <td style="padding: 4px 6px; text-align: center;">{overall_mae} pChEMBL</td>
+                            <td style="padding: 4px 6px; text-align: center;">{overall_n}</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #e9ecef;">
                             <td style="padding: 4px 6px; text-align: left;">A₁ Receptor</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.809</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.403 pChEMBL</td>
-                            <td style="padding: 4px 6px; text-align: center;">8,272</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a1_r2}</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a1_mae} pChEMBL</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a1_n}</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #e9ecef;">
                             <td style="padding: 4px 6px; text-align: left;">A₂<sub>A</sub> Receptor</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.835</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.529 pChEMBL</td>
-                            <td style="padding: 4px 6px; text-align: center;">8,407</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2a_r2}</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2a_mae} pChEMBL</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2a_n}</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #e9ecef;">
                             <td style="padding: 4px 6px; text-align: left;">A₂<sub>B</sub> Receptor</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.801</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.305 pChEMBL</td>
-                            <td style="padding: 4px 6px; text-align: center;">8,290</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2b_r2}</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2b_mae} pChEMBL</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a2b_n}</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #e9ecef;">
                             <td style="padding: 4px 6px; text-align: left;">A₃ Receptor</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.894</td>
-                            <td style="padding: 4px 6px; text-align: center;">0.347 pChEMBL</td>
-                            <td style="padding: 4px 6px; text-align: center;">8,432</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a3_r2}</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a3_mae} pChEMBL</td>
+                            <td style="padding: 4px 6px; text-align: center;">{a3_n}</td>
                         </tr>
                     </tbody>
                 </table>

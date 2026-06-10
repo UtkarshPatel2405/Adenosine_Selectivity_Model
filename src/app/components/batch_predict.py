@@ -6,7 +6,7 @@ import streamlit as st
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs
 
-from src.predictor import _load_scaler, _load_db_lookup, _load_models, SUBTYPES
+from src.predictor import _load_scaler, _load_db_lookup, _load_xgb_models, SUBTYPES
 from src.features import build_features
 
 _SMILES_ALIASES = ["smiles", "SMILES", "Smiles", "canonical_smiles", "smi", "SMI"]
@@ -25,9 +25,9 @@ def predict_batch(
     mode: str = "standard"
 ) -> pd.DataFrame:
     col = smiles_col or _infer_smiles_col(df)
-    scaler = _load_scaler(mode=mode)
+    scaler = _load_scaler(mode="precise")
     lookup = _load_db_lookup()
-    models = _load_models(mode=mode)
+    models = _load_xgb_models()
     
     total_mols = len(df)
     
