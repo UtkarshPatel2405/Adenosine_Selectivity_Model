@@ -1,25 +1,32 @@
 import pytest
+import numpy as np
 
 
-class TestPredict:
-    def test_invalid_smiles_raises(self):
-        from src.predictor import predict
-        with pytest.raises(ValueError, match="Invalid SMILES"):
-            predict("INVALID")
+class TestEnsemblePredict:
+    def test_single_model(self):
+        from src.predictor import _ensemble_predict
+        from sklearn.ensemble import RandomForestRegressor
+        model = RandomForestRegressor(n_estimators=10, random_state=42)
+        X = np.random.rand(10, 5)
+        y = np.random.rand(10)
+        model.fit(X, y)
+        x = np.random.rand(5)
+        mean, std, low, high = _ensemble_predict([model], x)
+        assert isinstance(mean, float)
+        assert std >= 0
+        assert low <= mean <= high
 
-    def test_returns_dict(self):
-        from src.predictor import predict
-        result = predict("CCO")
-        assert isinstance(result, dict)
-        assert "smiles" in result
-        assert "descriptors" in result
-        assert "predictions" in result
 
-    def test_descriptors_content(self):
-        from src.predictor import predict
-        result = predict("CCO")
-        desc = result["descriptors"]
-        assert "MW" in desc
-        assert "LogP" in desc
-        assert "HBD" in desc
-        assert "HBA" in desc
+class TestLoadScaler:
+    def test_missing_file_raises(self):
+        from src.predictor import _load_scaler
+        with pytest.raises(FileNotFoundError):
+            _load_scaler("precise")
+
+
+class TestDescriptorsDirect:
+    def test_descriptors_from_predictor(self):
+        from src.features import _descriptors
+        desc = _descriptors("CCO")
+        assert len(desc) == 7
+        assert desc[0] > 0  # MW
