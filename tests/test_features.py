@@ -2,35 +2,58 @@ import pytest
 import numpy as np
 
 
-class TestMorganFingerprintArray:
+class TestMorganBits:
     def test_output_shape(self):
-        from src.features import morgan_fingerprint_array
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles("CCO")
-        fp = morgan_fingerprint_array(mol)
+        from src.features import _morgan_bits
+        fp = _morgan_bits("CCO")
         assert isinstance(fp, np.ndarray)
         assert fp.ndim == 1
 
-    def test_bit_string_properties(self):
-        from src.features import morgan_fingerprint_array
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles("CCO")
-        fp = morgan_fingerprint_array(mol)
-        assert fp.dtype == np.uint8 or fp.dtype == np.int32
+    def test_invalid_smiles(self):
+        from src.features import _morgan_bits
+        with pytest.raises(ValueError):
+            _morgan_bits("INVALID")
 
 
-class TestPhysicochemicalDescriptors:
-    def test_molwt(self):
-        from src.features import compute_descriptors
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles("CCO")
-        desc = compute_descriptors(mol)
-        assert "MolWt" in desc
-        assert desc["MolWt"] > 0
+class TestDescriptors:
+    def test_output_shape(self):
+        from src.features import _descriptors
+        desc = _descriptors("CCO")
+        assert isinstance(desc, np.ndarray)
+        assert len(desc) == 7  # mw, logp, hbd, hba, rot, arom, tpsa
 
-    def test_lipinski_acceptors(self):
-        from src.features import compute_descriptors
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles("CCO")
-        desc = compute_descriptors(mol)
-        assert "NumHAcceptors" in desc
+    def test_valid_values(self):
+        from src.features import _descriptors
+        desc = _descriptors("CCO")
+        assert desc[0] > 0  # MW
+        assert desc[2] >= 0  # HBD
+
+    def test_invalid_smiles(self):
+        from src.features import _descriptors
+        with pytest.raises(ValueError):
+            _descriptors("INVALID")
+
+
+class TestFeatureFilter:
+    def test_fit_transform(self):
+        from src.features import FeatureFilter
+        X = np.random.rand(10, 5)
+        X[0, 0] = np.nan
+        ff = FeatureFilter(nan_threshold=0.5, var_threshold=0.0, corr_threshold=1.0)
+        ff.fit(X)
+        Xt = ff.transform(X)
+        assert Xt.shape[0] == 10
+        assert Xt.shape[1] <= 5
+
+
+class TestAllDescriptors:
+    def test_returns_array(self):
+        from src.features import _all_descriptors
+        desc = _all_descriptors("CCO")
+        assert isinstance(desc, np.ndarray)
+        assert len(desc) > 10
+
+    def test_invalid_smiles(self):
+        from src.features import _all_descriptors
+        with pytest.raises(ValueError):
+            _all_descriptors("INVALID")
