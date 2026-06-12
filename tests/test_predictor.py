@@ -1,27 +1,25 @@
 import pytest
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
 
 
-class TestPredictor:
-    def test_predict_returns_float(self):
-        from src.predictor import predict_pic50
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles("CCO")
-        model = RandomForestRegressor(n_estimators=10, random_state=42)
-        X_dummy = np.random.rand(10, 10)
-        y_dummy = np.random.rand(10)
-        model.fit(X_dummy, y_dummy)
-        result = predict_pic50(model, mol)
-        assert isinstance(result, (float, np.floating))
+class TestPredict:
+    def test_invalid_smiles_raises(self):
+        from src.predictor import predict
+        with pytest.raises(ValueError, match="Invalid SMILES"):
+            predict("INVALID")
 
-    def test_predict_multiple_molecules(self):
-        from src.predictor import batch_predict
-        from rdkit import Chem
-        mols = [Chem.MolFromSmiles(s) for s in ["CCO", "c1ccccc1", "CCN"]]
-        model = RandomForestRegressor(n_estimators=10, random_state=42)
-        X_dummy = np.random.rand(10, 10)
-        y_dummy = np.random.rand(10)
-        model.fit(X_dummy, y_dummy)
-        results = batch_predict(model, mols)
-        assert len(results) == len(mols)
+    def test_returns_dict(self):
+        from src.predictor import predict
+        result = predict("CCO")
+        assert isinstance(result, dict)
+        assert "smiles" in result
+        assert "descriptors" in result
+        assert "predictions" in result
+
+    def test_descriptors_content(self):
+        from src.predictor import predict
+        result = predict("CCO")
+        desc = result["descriptors"]
+        assert "MW" in desc
+        assert "LogP" in desc
+        assert "HBD" in desc
+        assert "HBA" in desc

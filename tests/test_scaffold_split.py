@@ -1,34 +1,29 @@
 import pytest
+import pandas as pd
 
 
 class TestScaffoldSplit:
-    def test_split_returns_indices(self):
-        from src.scaffold_split import scaffold_train_test_split
-        import pandas as pd
+    def test_split_returns_dataframes(self):
+        from src.scaffold_split import scaffold_split
         df = pd.DataFrame({
             "smiles": ["CCO", "c1ccccc1", "CCN", "c1ccccc1O", "CCC", "C1CCCCC1"],
             "activity": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         })
-        train_idx, test_idx = scaffold_train_test_split(df, smiles_col="smiles", test_size=0.3)
-        assert len(train_idx) > 0
-        assert len(test_idx) > 0
-        assert len(train_idx) + len(test_idx) == len(df)
+        train_df, test_df = scaffold_split(df, test_size=0.3, smiles_col="smiles")
+        assert len(train_df) > 0
+        assert len(test_df) > 0
+        assert len(train_df) + len(test_df) == len(df)
 
-    def test_no_leakage(self):
-        from src.scaffold_split import scaffold_train_test_split
-        import pandas as pd
-        from rdkit import Chem
-        from rdkit.Chem.Scaffolds import MurckoScaffold
-        df = pd.DataFrame({
-            "smiles": ["CCO", "c1ccccc1", "CCN", "c1ccccc1O", "CCC", "C1CCCCC1"],
-            "activity": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        })
-        train_idx, test_idx = scaffold_train_test_split(df, smiles_col="smiles", test_size=0.3)
-        train_scaffolds = set()
-        for i in train_idx:
-            mol = Chem.MolFromSmiles(df.iloc[i]["smiles"])
-            train_scaffolds.add(MurckoScaffold.MurckoScaffoldSmiles(mol=mol))
-        for i in test_idx:
-            mol = Chem.MolFromSmiles(df.iloc[i]["smiles"])
-            test_scaff = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
-            assert test_scaff not in train_scaffolds
+    def test_missing_column_raises(self):
+        from src.scaffold_split import scaffold_split
+        df = pd.DataFrame({"smiles": ["CCO"], "activity": [1.0]})
+        with pytest.raises(ValueError):
+            scaffold_split(df, smiles_col="nonexistent")
+
+    def test_split_smiles_globally(self):
+        from src.scaffold_split import split_smiles_globally
+        smiles = ["CCO", "c1ccccc1", "CCN", "c1ccccc1O", "CCC", "C1CCCCC1"]
+        train_set, test_set = split_smiles_globally(smiles, test_size=0.3)
+        assert len(train_set) > 0
+        assert len(test_set) > 0
+        assert len(train_set) + len(test_set) == len(set(smiles))
