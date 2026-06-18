@@ -6,6 +6,7 @@ class TestEnsemblePredict:
     def test_single_model(self):
         from src.predictor import _ensemble_predict
         from sklearn.ensemble import RandomForestRegressor
+
         model = RandomForestRegressor(n_estimators=10, random_state=42)
         X = np.random.rand(10, 5)
         y = np.random.rand(10)
@@ -20,6 +21,7 @@ class TestEnsemblePredict:
 class TestLoadScaler:
     def test_missing_file_raises(self):
         from src.predictor import _load_scaler
+
         with pytest.raises(FileNotFoundError):
             _load_scaler("precise")
 
@@ -27,6 +29,7 @@ class TestLoadScaler:
 class TestDescriptorsDirect:
     def test_descriptors_from_predictor(self):
         from src.features import _descriptors
+
         desc = _descriptors("CCO")
         assert len(desc) == 7
         assert desc[0] > 0  # MW

@@ -6,12 +6,10 @@ Provides a deep learning baseline for comparison with XGBoost.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,15 +17,20 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 try:
-    from torch_geometric.data import Data, Dataset, DataLoader as PyGDataLoader
-    from torch_geometric.nn import GINEConv, global_mean_pool, global_max_pool, BatchNorm
+    from torch_geometric.data import Data, DataLoader as PyGDataLoader
+    from torch_geometric.nn import (
+        GINEConv,
+        global_mean_pool,
+        global_max_pool,
+        BatchNorm,
+    )
+
     HAS_PYG = True
 except ImportError:
     HAS_PYG = False
     print("[WARNING] torch-geometric not installed. GNN model will not be available.")
 
 from rdkit import Chem
-from rdkit.Chem import Descriptors
 from sklearn.metrics import r2_score, mean_absolute_error
 
 
@@ -100,7 +103,7 @@ def smiles_to_graph(smiles: str) -> Optional[Data]:
     """Convert a SMILES string to a PyTorch Geometric Data object."""
     if not HAS_PYG:
         raise ImportError("torch-geometric is required for GNN model")
-    
+
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
@@ -134,10 +137,11 @@ def smiles_to_graph(smiles: str) -> Optional[Data]:
 
 # ── GNN Architecture ───────────────────────────────────────────
 
+
 class MoleculeGNN(nn.Module):
     """
     Message Passing Neural Network for molecular property prediction.
-    
+
     Architecture:
     - 3 GINE (Graph Isomorphism Network with Edge features) layers
     - BatchNorm after each layer
@@ -145,15 +149,21 @@ class MoleculeGNN(nn.Module):
     - 2-layer MLP prediction head with dropout
     """
 
-    def __init__(self, node_dim: int = ATOM_DIM, edge_dim: int = BOND_DIM, 
-                 hidden_dim: int = 256, num_layers: int = 3, dropout: float = 0.2):
+    def __init__(
+        self,
+        node_dim: int = ATOM_DIM,
+        edge_dim: int = BOND_DIM,
+        hidden_dim: int = 256,
+        num_layers: int = 3,
+        dropout: float = 0.2,
+    ):
         super().__init__()
-        
+
         self.node_encoder = nn.Linear(node_dim, hidden_dim)
-        
+
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
-        
+
         for _ in range(num_layers):
             mlp = nn.Sequential(
                 nn.Linear(hidden_dim, hidden_dim),
@@ -163,10 +173,10 @@ class MoleculeGNN(nn.Module):
             conv = GINEConv(mlp, edge_dim=edge_dim)
             self.convs.append(conv)
             self.bns.append(BatchNorm(hidden_dim))
-        
+
         # Edge encoder to match hidden_dim
         self.edge_encoder = nn.Linear(edge_dim, edge_dim)
-        
+
         # Prediction head: global pool → MLP
         self.head = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),  # *2 for mean+max pooling concat
@@ -177,15 +187,20 @@ class MoleculeGNN(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim // 2, 1),
         )
-        
+
         self.dropout = dropout
 
     def forward(self, data):
-        x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
-        
+        x, edge_index, edge_attr, batch = (
+            data.x,
+            data.edge_index,
+            data.edge_attr,
+            data.batch,
+        )
+
         # Encode nodes
         x = self.node_encoder(x)
-        
+
         # Message passing layers
         for conv, bn in zip(self.convs, self.bns):
             x_new = conv(x, edge_index, edge_attr)
@@ -193,12 +208,12 @@ class MoleculeGNN(nn.Module):
             x_new = F.relu(x_new)
             x_new = F.dropout(x_new, p=self.dropout, training=self.training)
             x = x + x_new  # Residual connection
-        
+
         # Global pooling (mean + max concatenation)
         x_mean = global_mean_pool(x, batch)
         x_max = global_max_pool(x, batch)
         x_pool = torch.cat([x_mean, x_max], dim=1)
-        
+
         # Prediction
         out = self.head(x_pool)
         return out.squeeze(-1)
@@ -206,36 +221,45 @@ class MoleculeGNN(nn.Module):
 
 # ── Training & Evaluation ─────────────────────────────────────
 
+
 def _prepare_data(subtype: str, data_path: str = "data/raw"):
     """Load data, scaffold-split, and convert to PyG graphs."""
     from src.data_loader import load_and_clean
-    from src.scaffold_split import split_smiles_globally
-    
-    df, _ = load_and_clean(data_path, mode="precise", 
-                            save_lookup_path="data/processed/db_lookup_gnn_temp.json",
-                            include_decoys=False)
+
+    df, _ = load_and_clean(
+        data_path,
+        mode="precise",
+        save_lookup_path="data/processed/db_lookup_gnn_temp.json",
+        include_decoys=False,
+    )
     df_st = df[df["target_subtype"] == subtype].copy().reset_index(drop=True)
-    
+
     if len(df_st) < 50:
         raise ValueError(f"Insufficient data for {subtype} ({len(df_st)} samples)")
-    
+
     import json
     from pathlib import Path
-    
+
     # Enforce Global Scaffold Split
     split_path = Path("data/processed/global_split.json")
     if not split_path.exists():
-        raise FileNotFoundError("Global split not found! Run retrain_production.py first.")
-        
+        raise FileNotFoundError(
+            "Global split not found! Run retrain_production.py first."
+        )
+
     with open(split_path, "r") as f:
         global_split = json.load(f)
-        
+
     train_smiles_set = set(global_split["train"])
     test_smiles_set = set(global_split["test"])
-    
-    train_df = df_st[df_st["canonical_smiles"].isin(train_smiles_set)].reset_index(drop=True)
-    test_df = df_st[df_st["canonical_smiles"].isin(test_smiles_set)].reset_index(drop=True)
-    
+
+    train_df = df_st[df_st["canonical_smiles"].isin(train_smiles_set)].reset_index(
+        drop=True
+    )
+    test_df = df_st[df_st["canonical_smiles"].isin(test_smiles_set)].reset_index(
+        drop=True
+    )
+
     # Convert to graphs
     def df_to_graphs(df_sub):
         graphs = []
@@ -246,47 +270,59 @@ def _prepare_data(subtype: str, data_path: str = "data/raw"):
                 g.smiles = row["canonical_smiles"]
                 graphs.append(g)
         return graphs
-    
+
     train_graphs = df_to_graphs(train_df)
     test_graphs = df_to_graphs(test_df)
-    
-    print(f"  [GNN] {subtype}: Train={len(train_graphs)}, Test={len(test_graphs)} molecular graphs")
-    
+
+    print(
+        f"  [GNN] {subtype}: Train={len(train_graphs)}, Test={len(test_graphs)} molecular graphs"
+    )
+
     return train_graphs, test_graphs
 
 
-def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_size: int = 64,
-                    patience: int = 15, data_path: str = "data/raw"):
+def train_gnn_model(
+    subtype: str,
+    epochs: int = 100,
+    lr: float = 1e-3,
+    batch_size: int = 64,
+    patience: int = 15,
+    data_path: str = "data/raw",
+):
     """Train a GNN model for a specific receptor subtype."""
     if not HAS_PYG:
         print("[ERROR] torch-geometric not installed. Cannot train GNN model.")
         return None
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"GNN TRAINING FOR {subtype} (MPNN/GINE, epochs={epochs})")
-    print(f"{'='*60}")
-    
+    print(f"{'=' * 60}")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"  Device: {device}")
-    
+
     # Prepare data
     train_graphs, test_graphs = _prepare_data(subtype, data_path)
-    
+
     train_loader = PyGDataLoader(train_graphs, batch_size=batch_size, shuffle=True)
     test_loader = PyGDataLoader(test_graphs, batch_size=batch_size, shuffle=False)
-    
+
     # Initialize model
-    model = MoleculeGNN(node_dim=ATOM_DIM, edge_dim=BOND_DIM, hidden_dim=256, num_layers=3, dropout=0.2)
+    model = MoleculeGNN(
+        node_dim=ATOM_DIM, edge_dim=BOND_DIM, hidden_dim=256, num_layers=3, dropout=0.2
+    )
     model = model.to(device)
-    
+
     optimizer = Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5, min_lr=1e-6)
+    scheduler = ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5, min_lr=1e-6
+    )
     loss_fn = nn.MSELoss()
-    
+
     best_val_mae = float("inf")
     best_epoch = 0
     epochs_no_improve = 0
-    
+
     for epoch in range(1, epochs + 1):
         # Train
         model.train()
@@ -303,7 +339,7 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
             train_loss += loss.item()
             n_batches += 1
         train_loss /= max(n_batches, 1)
-        
+
         # Evaluate
         model.eval()
         all_preds = []
@@ -314,16 +350,18 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
                 pred = model(batch)
                 all_preds.extend(pred.cpu().numpy().tolist())
                 all_true.extend(batch.y.cpu().numpy().tolist())
-        
+
         val_mae = float(mean_absolute_error(all_true, all_preds))
         val_r2 = float(r2_score(all_true, all_preds))
-        
+
         scheduler.step(val_mae)
-        
+
         if epoch % 10 == 0 or epoch == 1:
             current_lr = optimizer.param_groups[0]["lr"]
-            print(f"  Epoch {epoch:3d}/{epochs} | Train Loss: {train_loss:.4f} | Val MAE: {val_mae:.4f} | Val R²: {val_r2:.4f} | LR: {current_lr:.1e}")
-        
+            print(
+                f"  Epoch {epoch:3d}/{epochs} | Train Loss: {train_loss:.4f} | Val MAE: {val_mae:.4f} | Val R²: {val_r2:.4f} | LR: {current_lr:.1e}"
+            )
+
         # Early stopping
         if val_mae < best_val_mae:
             best_val_mae = val_mae
@@ -332,26 +370,33 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
             # Save best model
             model_dir = Path("models/gnn")
             model_dir.mkdir(parents=True, exist_ok=True)
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "node_dim": ATOM_DIM,
-                "edge_dim": BOND_DIM,
-                "hidden_dim": 256,
-                "num_layers": 3,
-                "best_val_mae": best_val_mae,
-                "best_epoch": best_epoch,
-            }, model_dir / f"gnn_{subtype.lower()}_model.pt")
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "node_dim": ATOM_DIM,
+                    "edge_dim": BOND_DIM,
+                    "hidden_dim": 256,
+                    "num_layers": 3,
+                    "best_val_mae": best_val_mae,
+                    "best_epoch": best_epoch,
+                },
+                model_dir / f"gnn_{subtype.lower()}_model.pt",
+            )
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
-                print(f"  [EARLY STOP] No improvement for {patience} epochs. Best epoch: {best_epoch} (MAE: {best_val_mae:.4f})")
+                print(
+                    f"  [EARLY STOP] No improvement for {patience} epochs. Best epoch: {best_epoch} (MAE: {best_val_mae:.4f})"
+                )
                 break
-    
+
     # Final evaluation with best model
-    checkpoint = torch.load(Path("models/gnn") / f"gnn_{subtype.lower()}_model.pt", weights_only=False)
+    checkpoint = torch.load(
+        Path("models/gnn") / f"gnn_{subtype.lower()}_model.pt", weights_only=False
+    )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    
+
     all_preds = []
     all_true = []
     with torch.no_grad():
@@ -360,17 +405,19 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
             pred = model(batch)
             all_preds.extend(pred.cpu().numpy().tolist())
             all_true.extend(batch.y.cpu().numpy().tolist())
-    
+
     final_mae = float(mean_absolute_error(all_true, all_preds))
     final_r2 = float(r2_score(all_true, all_preds))
-    final_rmse = float(np.sqrt(np.mean((np.array(all_true) - np.array(all_preds))**2)))
-    
+    final_rmse = float(
+        np.sqrt(np.mean((np.array(all_true) - np.array(all_preds)) ** 2))
+    )
+
     print(f"\n  [FINAL] {subtype} GNN Performance:")
     print(f"    R² = {final_r2:.4f}")
     print(f"    MAE = {final_mae:.4f}")
     print(f"    RMSE = {final_rmse:.4f}")
     print(f"    Best Epoch = {best_epoch}")
-    
+
     result = {
         "subtype": subtype,
         "model": "MPNN/GINE",
@@ -381,32 +428,32 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
         "train_size": len(train_graphs),
         "test_size": len(test_graphs),
     }
-    
+
     # Save report
     report_dir = Path("outputs/gnn")
     report_dir.mkdir(parents=True, exist_ok=True)
     with open(report_dir / f"{subtype}_gnn_report.json", "w") as f:
         json.dump(result, f, indent=2)
-    
+
     return result
 
 
 def train_all_subtypes(epochs: int = 100):
     """Train GNN models for ALL 4 receptor subtypes."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("GNN TRAINING FOR ALL SUBTYPES")
-    print("="*60)
-    
+    print("=" * 60)
+
     all_results = {}
     for st in SUBTYPES:
         result = train_gnn_model(subtype=st, epochs=epochs)
         if result is not None:
             all_results[st] = result
-    
+
     # Save combined summary
     report_dir = Path("outputs/gnn")
     report_dir.mkdir(parents=True, exist_ok=True)
-    
+
     summary = {
         "model": "MPNN/GINE (PyTorch Geometric)",
         "n_subtypes": len(all_results),
@@ -414,8 +461,10 @@ def train_all_subtypes(epochs: int = 100):
     }
     with open(report_dir / "all_subtypes_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"\n[SUCCESS] All GNN results saved to {report_dir / 'all_subtypes_summary.json'}")
-    
+    print(
+        f"\n[SUCCESS] All GNN results saved to {report_dir / 'all_subtypes_summary.json'}"
+    )
+
     return all_results
 
 
@@ -423,18 +472,18 @@ def predict_gnn(smiles: str, subtype: str) -> Optional[float]:
     """Run GNN inference on a single SMILES for a specific subtype."""
     if not HAS_PYG:
         return None
-    
+
     model_path = Path(f"models/gnn/gnn_{subtype.lower()}_model.pt")
     if not model_path.exists():
         return None
-    
+
     graph = smiles_to_graph(smiles)
     if graph is None:
         return None
-    
+
     device = torch.device("cpu")
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-    
+
     model = MoleculeGNN(
         node_dim=checkpoint.get("node_dim", ATOM_DIM),
         edge_dim=checkpoint.get("edge_dim", BOND_DIM),
@@ -443,24 +492,27 @@ def predict_gnn(smiles: str, subtype: str) -> Optional[float]:
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    
+
     # Add batch dimension
     graph.batch = torch.zeros(graph.x.size(0), dtype=torch.long)
-    
+
     with torch.no_grad():
         pred = model(graph)
-    
+
     return float(pred.item())
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="GNN (MPNN) model training for adenosine receptor subtypes")
+
+    parser = argparse.ArgumentParser(
+        description="GNN (MPNN) model training for adenosine receptor subtypes"
+    )
     parser.add_argument("--subtype", default=None, help="Subtype to train")
     parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--all", action="store_true", help="Train ALL 4 subtypes")
     args = parser.parse_args()
-    
+
     if args.all:
         train_all_subtypes(epochs=args.epochs)
     elif args.subtype:

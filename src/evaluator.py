@@ -13,9 +13,11 @@ from sklearn.dummy import DummyRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from src.data_loader import load_and_clean
-from src.scaffold_split import split_smiles_globally
-from src.features import build_feature_matrix
-from src.predictor import _load_xgb_models, _load_rf_models, _ensemble_predict, SUBTYPES, _try_gnn_predict
+from src.predictor import (
+    _load_xgb_models,
+    _load_rf_models,
+    SUBTYPES,
+)
 
 
 def _write_json(path: str, obj) -> None:
@@ -24,7 +26,9 @@ def _write_json(path: str, obj) -> None:
         json.dump(obj, f, indent=2, sort_keys=True)
 
 
-def _calibration_quartiles(y_true: np.ndarray, y_pred: np.ndarray, y_std: np.ndarray) -> List[dict]:
+def _calibration_quartiles(
+    y_true: np.ndarray, y_pred: np.ndarray, y_std: np.ndarray
+) -> List[dict]:
     """
     Group predictions into quartiles by predicted uncertainty.
     A well-calibrated model shows monotonically increasing MAE as uncertainty increases.
@@ -52,47 +56,62 @@ def _calibration_quartiles(y_true: np.ndarray, y_pred: np.ndarray, y_std: np.nda
     return out
 
 
-def evaluate(mode: str = "precise",
-             data_path: str = "data/raw",
-             test_size: float = 0.2,
-             random_state: int = 42,
-             out_path: str | None = None,
-             include_decoys: bool = True) -> dict:
+def evaluate(
+    mode: str = "precise",
+    data_path: str = "data/raw",
+    test_size: float = 0.2,
+    random_state: int = 42,
+    out_path: str | None = None,
+    include_decoys: bool = True,
+) -> dict:
     """
     Evaluate models with real conformal prediction intervals.
-    
+
     Key fix: Ensures _ensemble_predict extracts actual uncertainty from
     CrossConformalRegressor.predict_interval() instead of returning 0.0.
     """
     if out_path is None:
         out_path = f"outputs/validoutput/{mode}/evaluation_{mode}_report.json"
-   
+
     # Load data with same settings as training
     df, _ = load_and_clean(data_path, mode=mode, include_decoys=include_decoys)
-    train_smiles, test_smiles = split_smiles_globally(
-        df["canonical_smiles"].unique(), test_size=test_size, random_state=random_state
-    )
+
+    # Load global scaffold split from production training
+    split_path = Path("data/processed/global_split.json")
+    with open(split_path) as f:
+        split = json.load(f)
+    train_smiles = set(split["train"])
+    test_smiles = set(split["test"])
+
+    # Filter to SMILES present in our data (handles any data drift)
+    available_smiles = set(df["canonical_smiles"])
+    train_smiles = train_smiles & available_smiles
+    test_smiles = test_smiles & available_smiles
+
     train_df = df[df["canonical_smiles"].isin(train_smiles)].reset_index(drop=True)
     test_df = df[df["canonical_smiles"].isin(test_smiles)].reset_index(drop=True)
-    
+
     # Load production scaler pipeline
     import pickle
     from src.features import _morgan_bits, _maccs_bits, _all_descriptors
-    
+
     scaler_path = Path(f"models/{mode}/scaler_{mode}.pkl")
     if not scaler_path.exists():
         scaler_path = Path("models/scaler.pkl")
-        
+
     print(f"  [INFO] Loading production feature pipeline from {scaler_path}")
     with open(scaler_path, "rb") as f:
         pipeline = pickle.load(f)
-        
+
     def transform_df(df):
         from joblib import Parallel, delayed
+
         smiles = df["canonical_smiles"].tolist()
         Xfp = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in smiles))
         Xmaccs = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in smiles))
-        Xdesc = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in smiles))
+        Xdesc = np.vstack(
+            Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in smiles)
+        )
         Xdesc_s = pipeline.transform(Xdesc)
         return np.hstack([Xfp, Xmaccs, Xdesc_s]).astype(np.float32)
 
@@ -113,8 +132,8 @@ def evaluate(mode: str = "precise",
     all_uppers = []
 
     for st in SUBTYPES:
-        train_mask = (train_df["target_subtype"].values == st)
-        test_mask = (test_df["target_subtype"].values == st)
+        train_mask = train_df["target_subtype"].values == st
+        test_mask = test_df["target_subtype"].values == st
 
         Xtr = X_train[train_mask]
         ytr = y_train_all[train_mask]
@@ -160,7 +179,9 @@ def evaluate(mode: str = "precise",
         # Verify conformal intervals are producing real uncertainty
         mean_std = float(np.mean(stds))
         if mean_std < 1e-6:
-            print(f"  [WARNING] {st}: Conformal uncertainty is near-zero ({mean_std:.6f}). Model may not be a conformal wrapper.")
+            print(
+                f"  [WARNING] {st}: Conformal uncertainty is near-zero ({mean_std:.6f}). Model may not be a conformal wrapper."
+            )
         else:
             print(f"  [OK] {st}: Mean conformal uncertainty = {mean_std:.4f}")
 
@@ -181,7 +202,9 @@ def evaluate(mode: str = "precise",
             "baseline_mae": float(mean_absolute_error(yte, base_preds)),
             "baseline_rmse": float(np.sqrt(mean_squared_error(yte, base_preds))),
             "baseline_r2": float(r2_score(yte, base_preds)),
-            "delta_mae": float(mean_absolute_error(yte, preds) - mean_absolute_error(yte, base_preds)),
+            "delta_mae": float(
+                mean_absolute_error(yte, preds) - mean_absolute_error(yte, base_preds)
+            ),
             "uncertainty_mean_std": mean_std,
             "conformal_coverage_90": coverage,
             "calibration_quartiles": _calibration_quartiles(yte, preds, stds),
@@ -192,11 +215,13 @@ def evaluate(mode: str = "precise",
             from src.gnn_model import MoleculeGNN, smiles_to_graph
             import torch
             from torch_geometric.loader import DataLoader
-            
+
             gnn_model_path = Path(f"models/gnn/gnn_{st.lower()}_model.pt")
             if gnn_model_path.exists():
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                checkpoint = torch.load(gnn_model_path, map_location=device, weights_only=False)
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                checkpoint = torch.load(
+                    gnn_model_path, map_location=device, weights_only=False
+                )
                 gnn_model = MoleculeGNN(
                     node_dim=checkpoint.get("node_dim", 140),
                     edge_dim=checkpoint.get("edge_dim", 7),
@@ -205,7 +230,7 @@ def evaluate(mode: str = "precise",
                 ).to(device)
                 gnn_model.load_state_dict(checkpoint["model_state_dict"])
                 gnn_model.eval()
-                
+
                 test_smiles_st = test_df.loc[test_mask, "canonical_smiles"].tolist()
                 test_graphs = []
                 for idx, smi in enumerate(test_smiles_st):
@@ -213,7 +238,7 @@ def evaluate(mode: str = "precise",
                     if g is not None:
                         g.y = torch.tensor([yte[idx]], dtype=torch.float)
                         test_graphs.append(g)
-                
+
                 if test_graphs:
                     loader = DataLoader(test_graphs, batch_size=128, shuffle=False)
                     preds_gnn = []
@@ -224,9 +249,13 @@ def evaluate(mode: str = "precise",
                             out = gnn_model(data)
                             preds_gnn.extend(out.cpu().numpy().tolist())
                             true_gnn.extend(data.y.cpu().numpy().tolist())
-                    
-                    report_st["gnn_mae"] = float(mean_absolute_error(true_gnn, preds_gnn))
-                    report_st["gnn_rmse"] = float(np.sqrt(mean_squared_error(true_gnn, preds_gnn)))
+
+                    report_st["gnn_mae"] = float(
+                        mean_absolute_error(true_gnn, preds_gnn)
+                    )
+                    report_st["gnn_rmse"] = float(
+                        np.sqrt(mean_squared_error(true_gnn, preds_gnn))
+                    )
                     report_st["gnn_r2"] = float(r2_score(true_gnn, preds_gnn))
                 else:
                     report_st["gnn_mae"] = None
@@ -275,7 +304,9 @@ def evaluate(mode: str = "precise",
     if len(y_true) > 0 and len(all_lowers) > 0:
         y_lower = np.concatenate(all_lowers)
         y_upper = np.concatenate(all_uppers)
-        overall_coverage = float(np.sum((y_true >= y_lower) & (y_true <= y_upper)) / len(y_true))
+        overall_coverage = float(
+            np.sum((y_true >= y_lower) & (y_true <= y_upper)) / len(y_true)
+        )
 
     summary = {
         "mode": mode,
@@ -285,14 +316,22 @@ def evaluate(mode: str = "precise",
         "n_train": int(len(train_df)),
         "n_test": int(len(test_df)),
         "overall": {
-            "model_mae": float(mean_absolute_error(y_true, y_pred)) if len(y_true) else None,
-            "model_rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))) if len(y_true) else None,
+            "model_mae": float(mean_absolute_error(y_true, y_pred))
+            if len(y_true)
+            else None,
+            "model_rmse": float(np.sqrt(mean_squared_error(y_true, y_pred)))
+            if len(y_true)
+            else None,
             "model_r2": float(r2_score(y_true, y_pred)) if len(y_true) else None,
             "baseline_mae": float(mean_absolute_error(y_test_all, base_pred_all)),
-            "baseline_rmse": float(np.sqrt(mean_squared_error(y_test_all, base_pred_all))),
+            "baseline_rmse": float(
+                np.sqrt(mean_squared_error(y_test_all, base_pred_all))
+            ),
             "baseline_r2": float(r2_score(y_test_all, base_pred_all)),
             "conformal_coverage_90": overall_coverage,
-            "calibration_quartiles": _calibration_quartiles(y_true, y_pred, y_std) if len(y_true) else [],
+            "calibration_quartiles": _calibration_quartiles(y_true, y_pred, y_std)
+            if len(y_true)
+            else [],
         },
         "per_subtype": per_subtype,
     }
@@ -302,8 +341,7 @@ def evaluate(mode: str = "precise",
     return summary
 
 
-def evaluate_actives_only(mode: str = "precise",
-                          data_path: str = "data/raw") -> dict:
+def evaluate_actives_only(mode: str = "precise", data_path: str = "data/raw") -> dict:
     """
     Separate evaluation on actives-only (no decoys) for honest reporting.
     This prevents inflated R² from easy-to-predict decoy compounds.
@@ -318,18 +356,23 @@ def evaluate_actives_only(mode: str = "precise",
 
 
 if __name__ == "__main__":
-    print("="*60)
+    print("=" * 60)
     print("EVALUATING WITH DECOYS (full dataset)")
-    print("="*60)
+    print("=" * 60)
     rep_full = evaluate(mode="precise")
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("EVALUATING ACTIVES-ONLY (honest baseline)")
-    print("="*60)
+    print("=" * 60)
     rep_actives = evaluate_actives_only(mode="precise")
-    
+
     # Print comparison
-    if rep_full["overall"]["model_r2"] is not None and rep_actives["overall"]["model_r2"] is not None:
+    if (
+        rep_full["overall"]["model_r2"] is not None
+        and rep_actives["overall"]["model_r2"] is not None
+    ):
         print(f"\n[COMPARISON] Full dataset R² = {rep_full['overall']['model_r2']:.4f}")
-        print(f"[COMPARISON] Actives-only R² = {rep_actives['overall']['model_r2']:.4f}")
+        print(
+            f"[COMPARISON] Actives-only R² = {rep_actives['overall']['model_r2']:.4f}"
+        )
         print("[INFO] Report BOTH in publications for transparency.")

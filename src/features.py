@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Descriptors, Lipinski, MACCSkeys
+from rdkit.Chem import Descriptors, Lipinski, MACCSkeys
 from sklearn.preprocessing import StandardScaler
 from rdkit.Chem import rdFingerprintGenerator
 
@@ -18,14 +18,14 @@ class FeatureFilter:
         self.selected_indices = None
         self.medians = None
         self.feature_names = None
-        
+
     def fit(self, X: np.ndarray, feature_names=None):
         N, D = X.shape
-        
+
         # 1. Calculate NaN fractions
         nan_fraction = np.isnan(X).mean(axis=0)
         keep_nan_mask = nan_fraction <= self.nan_threshold
-        
+
         # Compute medians to fill remaining NaNs
         self.medians = np.zeros(D)
         for j in range(D):
@@ -35,30 +35,32 @@ class FeatureFilter:
                 self.medians[j] = np.median(valid_vals)
             else:
                 self.medians[j] = 0.0
-                
+
         # Fill NaNs temporarily for variance and correlation
         X_filled = X.copy()
         for j in range(D):
             nan_mask = np.isnan(X_filled[:, j])
             X_filled[nan_mask, j] = self.medians[j]
-            
+
         # 2. Variance Threshold
         variances = np.var(X_filled, axis=0)
         keep_var_mask = (variances >= self.var_threshold) & keep_nan_mask
-        
+
         indices_after_var = np.where(keep_var_mask)[0]
-        
+
         if len(indices_after_var) == 0:
-            raise ValueError("All descriptors were filtered out by NaN/Variance thresholds!")
-            
+            raise ValueError(
+                "All descriptors were filtered out by NaN/Variance thresholds!"
+            )
+
         X_filtered = X_filled[:, indices_after_var]
-        
+
         # 3. Correlation filter: Pearson correlation
         n_features = X_filtered.shape[1]
         df_corr = pd.DataFrame(X_filtered).corr().abs()
-        
+
         vars_filtered = variances[indices_after_var]
-        
+
         to_drop = set()
         for i in range(n_features):
             if i in to_drop:
@@ -71,24 +73,26 @@ class FeatureFilter:
                         to_drop.add(j)
                     else:
                         to_drop.add(i)
-                        
-        keep_indices = [indices_after_var[i] for i in range(n_features) if i not in to_drop]
+
+        keep_indices = [
+            indices_after_var[i] for i in range(n_features) if i not in to_drop
+        ]
         self.selected_indices = np.array(keep_indices, dtype=int)
-        
+
         if feature_names is not None:
             self.feature_names = [feature_names[i] for i in self.selected_indices]
-            
+
         return self
-        
+
     def transform(self, X: np.ndarray) -> np.ndarray:
         X_transformed = X.copy()
         if X_transformed.ndim == 1:
             X_transformed = X_transformed.reshape(1, -1)
-            
+
         for j in range(X_transformed.shape[1]):
             nan_mask = np.isnan(X_transformed[:, j])
             X_transformed[nan_mask, j] = self.medians[j]
-            
+
         return X_transformed[:, self.selected_indices]
 
 
@@ -96,14 +100,14 @@ class FeaturePipeline:
     def __init__(self, feature_filter, scaler):
         self.feature_filter = feature_filter
         self.scaler = scaler
-        
+
     def transform(self, X_desc: np.ndarray) -> np.ndarray:
         X_desc_filtered = self.feature_filter.transform(X_desc)
         X_desc_scaled = self.scaler.transform(X_desc_filtered)
         return X_desc_scaled
-        
+
     def __getattr__(self, name):
-        if name.startswith('__') or 'scaler' not in self.__dict__:
+        if name.startswith("__") or "scaler" not in self.__dict__:
             raise AttributeError(f"'FeaturePipeline' object has no attribute '{name}'")
         return getattr(self.scaler, name)
 
@@ -133,21 +137,51 @@ def _maccs_bits(smiles: str) -> np.ndarray:
 
 CURATED_DESCRIPTORS_LIST = [
     # 1. Basic Physicochemical Properties
-    "MolWt", "ExactMolWt", "HeavyAtomCount", "HeavyAtomMolWt",
-    "MolLogP", "MolMR", "TPSA", "LabuteASA",
-    
+    "MolWt",
+    "ExactMolWt",
+    "HeavyAtomCount",
+    "HeavyAtomMolWt",
+    "MolLogP",
+    "MolMR",
+    "TPSA",
+    "LabuteASA",
     # 2. Hydrogen Bonding & Charge polarities
-    "NumHDonors", "NumHAcceptors", "NumRotatableBonds", "FractionCSP3",
-    "MaxAbsPartialCharge", "MaxPartialCharge", "MinAbsPartialCharge", "MinPartialCharge",
-    
+    "NumHDonors",
+    "NumHAcceptors",
+    "NumRotatableBonds",
+    "FractionCSP3",
+    "MaxAbsPartialCharge",
+    "MaxPartialCharge",
+    "MinAbsPartialCharge",
+    "MinPartialCharge",
     # 3. Structural Rings & Heteroatoms
-    "RingCount", "NumAromaticRings", "NumAliphaticRings", "NumSaturatedRings",
-    "NumAromaticCarbocycles", "NumAromaticHeterocycles", "NumAliphaticCarbocycles", "NumAliphaticHeterocycles",
-    "NumHeteroatoms", "NumValenceElectrons",
-    
+    "RingCount",
+    "NumAromaticRings",
+    "NumAliphaticRings",
+    "NumSaturatedRings",
+    "NumAromaticCarbocycles",
+    "NumAromaticHeterocycles",
+    "NumAliphaticCarbocycles",
+    "NumAliphaticHeterocycles",
+    "NumHeteroatoms",
+    "NumValenceElectrons",
     # 4. Core topological descriptors (widely-validated in QSAR)
-    "BalabanJ", "BertzCT", "HallKierAlpha", "Kappa1", "Kappa2", "Kappa3",
-    "Chi0n", "Chi0v", "Chi1n", "Chi1v", "Chi2n", "Chi2v", "Chi3n", "Chi3v", "Chi4n", "Chi4v"
+    "BalabanJ",
+    "BertzCT",
+    "HallKierAlpha",
+    "Kappa1",
+    "Kappa2",
+    "Kappa3",
+    "Chi0n",
+    "Chi0v",
+    "Chi1n",
+    "Chi1v",
+    "Chi2n",
+    "Chi2v",
+    "Chi3n",
+    "Chi3v",
+    "Chi4n",
+    "Chi4v",
 ]
 
 
@@ -191,19 +225,28 @@ def _all_descriptors_names() -> list:
     return list(CURATED_DESCRIPTORS_LIST)
 
 
-
-def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles", save_to_disk: bool = True):
+def build_feature_matrix(
+    train_df, test_df, smiles_col: str = "canonical_smiles", save_to_disk: bool = True
+):
     train_smiles = train_df[smiles_col].tolist()
     test_smiles = test_df[smiles_col].tolist()
     from joblib import Parallel, delayed
 
     print("[INFO] Computing Morgan fingerprints...")
-    Xfp_train = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in train_smiles))
-    Xfp_test = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in test_smiles))
+    Xfp_train = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in train_smiles)
+    )
+    Xfp_test = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in test_smiles)
+    )
 
     print("[INFO] Computing MACCS keys...")
-    Xmaccs_train = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in train_smiles))
-    Xmaccs_test = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in test_smiles))
+    Xmaccs_train = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in train_smiles)
+    )
+    Xmaccs_test = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in test_smiles)
+    )
 
     X_fp_train = np.hstack([Xfp_train, Xmaccs_train])
     X_fp_test = np.hstack([Xfp_test, Xmaccs_test])
@@ -215,15 +258,22 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
             generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
             return generator.GetFingerprint(mol)
         return None
+
     train_fps = Parallel(n_jobs=-1)(delayed(_get_fp)(s) for s in train_smiles)
-    
+
     if save_to_disk:
         with open("data/processed/train_fps.pkl", "wb") as f:
             pickle.dump(train_fps, f)
 
-    print(f"[INFO] Computing curated RDKit descriptors ({len(CURATED_DESCRIPTORS_LIST)})...")
-    Xdesc_train = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in train_smiles))
-    Xdesc_test = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in test_smiles))
+    print(
+        f"[INFO] Computing curated RDKit descriptors ({len(CURATED_DESCRIPTORS_LIST)})..."
+    )
+    Xdesc_train = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in train_smiles)
+    )
+    Xdesc_test = np.vstack(
+        Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in test_smiles)
+    )
 
     print("[INFO] Filtering descriptors (NaN, Variance, Correlation)...")
     desc_names = _all_descriptors_names()
@@ -233,7 +283,9 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
     Xdesc_train_filtered = feature_filter.transform(Xdesc_train)
     Xdesc_test_filtered = feature_filter.transform(Xdesc_test)
 
-    print(f"[INFO] Started with {Xdesc_train.shape[1]} descriptors -> kept {Xdesc_train_filtered.shape[1]} after filtering.")
+    print(
+        f"[INFO] Started with {Xdesc_train.shape[1]} descriptors -> kept {Xdesc_train_filtered.shape[1]} after filtering."
+    )
 
     scaler = StandardScaler()
     Xdesc_train_s = scaler.fit_transform(Xdesc_train_filtered)
@@ -248,7 +300,7 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
         Path("models").mkdir(parents=True, exist_ok=True)
         with open("models/scaler.pkl", "wb") as f:
             pickle.dump(pipeline, f)
-        
+
         Path("data/processed").mkdir(parents=True, exist_ok=True)
         with open("data/processed/train_smiles.pkl", "wb") as f:
             pickle.dump(train_smiles, f)
@@ -268,4 +320,6 @@ def build_features(smiles: str, pipeline) -> np.ndarray:
     maccs = _maccs_bits(smiles)
     desc = _all_descriptors(smiles).reshape(1, -1)
     desc_s = pipeline.transform(desc).ravel()
-    return np.hstack([fp.astype(np.float32), maccs.astype(np.float32), desc_s.astype(np.float32)])
+    return np.hstack(
+        [fp.astype(np.float32), maccs.astype(np.float32), desc_s.astype(np.float32)]
+    )

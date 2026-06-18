@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 from __future__ import annotations
 import json
 import sys
@@ -15,26 +16,24 @@ if str(ROOT) not in sys.path:
 
 from src.predictor import SUBTYPES, predict
 from src.chem_utils import topk_tanimoto
-from src.app.components.structure_viz import draw_2d, draw_2d_svg, generate_3d_conformer
+from src.app.components.structure_viz import draw_2d_svg, generate_3d_conformer
 from src.app.components.pains_checker import check_pains
 from src.app.components.drug_likeness import qed_profile
 from src.app.components.applicability_domain import nearest_tanimoto
 from src.app.components.batch_predict import predict_batch, _infer_smiles_col
 from src.app.components.model_reports import (
     load_evaluation_tables,
-    load_fingerprint_comparison,
-    load_scaffold_ood,
     load_run_summary,
-    load_mode_examples,
     load_examples,
-    outputs_exist,
 )
+
 
 def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
     from rdkit import Chem
     from rdkit.Chem import AllChem
+
     mol = Chem.MolFromSmiles(smiles) if smiles else None
-    
+
     desc_explanations = {
         "MolLogP": "Lipophilicity (Octanol-water partition coefficient). A higher value increases hydrophobic interactions but may reduce solubility.",
         "TPSA": "Topological Polar Surface Area. Represents molecular polarity; crucial for cell membrane permeability and BBB penetration.",
@@ -46,26 +45,26 @@ def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
         "FractionCSP3": "Saturated Carbons (sp3 fraction). Indicates molecular 3D complexity and saturation; correlated with better solubility.",
         "MolMR": "Molecular Refractivity. Represents molecular volume and polarizability.",
         "MaxAbsPartialCharge": "Maximum absolute partial charge. High charge density can affect electrostatic binding interactions.",
-        "MinPartialCharge": "Minimum partial charge. Represents the most negatively charged region, often active in hydrogen bonding."
+        "MinPartialCharge": "Minimum partial charge. Represents the most negatively charged region, often active in hydrogen bonding.",
     }
-    
+
     if name in desc_explanations:
         return {
             "Type": "Physicochemical Property",
             "Property": name,
             "Query Value": f"{val:.3f}" if isinstance(val, (int, float)) else str(val),
-            "Interpretation": desc_explanations[name]
+            "Interpretation": desc_explanations[name],
         }
-    
+
     if not (name.startswith("Morgan_FP_") or name.startswith("MACCS_")):
         clean_name = name.replace("_", " ")
         return {
             "Type": "Physicochemical Property",
             "Property": name,
             "Query Value": f"{val:.3f}" if isinstance(val, (int, float)) else str(val),
-            "Interpretation": f"Continuous descriptor '{clean_name}' calculated by RDKit representing molecular structure topology or charge."
+            "Interpretation": f"Continuous descriptor '{clean_name}' calculated by RDKit representing molecular structure topology or charge.",
         }
-        
+
     maccs_dict = {
         "MACCS_115": "Presence of CH3 (methyl) or terminal alkyl group.",
         "MACCS_137": "Presence of a Carbonyl group (C=O).",
@@ -75,19 +74,21 @@ def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
         "MACCS_155": "Presence of Halogen atoms (F, Cl, Br, I).",
         "MACCS_160": "Presence of a CH3 group.",
         "MACCS_164": "Presence of one or more Oxygen atoms.",
-        "MACCS_165": "Presence of a Ring structure."
+        "MACCS_165": "Presence of a Ring structure.",
     }
-    
+
     if name.startswith("MACCS_"):
         key_num = name.split("_")[1]
-        interpretation = maccs_dict.get(name, f"MACCS Key #{key_num} (standard structural fragment pattern).")
+        interpretation = maccs_dict.get(
+            name, f"MACCS Key #{key_num} (standard structural fragment pattern)."
+        )
         return {
             "Type": "MACCS Structural Key",
             "Property": name,
             "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
-            "Interpretation": interpretation
+            "Interpretation": interpretation,
         }
-        
+
     if name.startswith("Morgan_FP_"):
         bit_idx = int(name.split("_")[2])
         if mol is None:
@@ -95,12 +96,14 @@ def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
                 "Type": "Morgan Fingerprint Bit",
                 "Property": name,
                 "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
-                "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}."
+                "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}.",
             }
-            
+
         info = {}
         try:
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048, bitInfo=info)
+            AllChem.GetMorganFingerprintAsBitVect(
+                mol, radius=2, nBits=2048, bitInfo=info
+            )
             if bit_idx in info and len(info[bit_idx]) > 0:
                 atom_idx, radius = info[bit_idx][0]
                 if radius == 0:
@@ -112,24 +115,25 @@ def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
                     submol = Chem.PathToSubmol(mol, env)
                     smarts = Chem.MolToSmarts(submol)
                     desc = f"Circular environment around atom {mol.GetAtomWithIdx(atom_idx).GetSymbol()} (radius={radius})"
-                
+
                 return {
                     "Type": f"Morgan FP Environment (radius={radius})",
                     "Property": name,
                     "Query Value": "Present (1)",
-                    "Interpretation": f"{desc}. Exact structural SMARTS matched in this molecule: `{smarts}`"
+                    "Interpretation": f"{desc}. Exact structural SMARTS matched in this molecule: `{smarts}`",
                 }
         except Exception:
             pass
-            
+
         return {
             "Type": "Morgan Fingerprint Bit",
             "Property": name,
             "Query Value": "Present (1)" if float(val) > 0.5 else "Absent (0)",
-            "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}."
+            "Interpretation": f"Morgan circular fingerprint bit #{bit_idx}.",
         }
-            
+
     return {}
+
 
 def _ad_label(sim: float | None) -> str:
     if sim is None:
@@ -140,8 +144,10 @@ def _ad_label(sim: float | None) -> str:
         return "Medium"
     return "Low"
 
+
 def render_3d_viewer(mol_block: str) -> str:
     import json
+
     escaped_mol = json.dumps(mol_block)
     html_content = f"""
     <!DOCTYPE html>
@@ -184,15 +190,17 @@ def render_3d_viewer(mol_block: str) -> str:
     """
     return html_content
 
+
 def _section_single_prediction():
     st.header("Single SMILES Prediction")
 
     # User Input - Single Smiles Field
-    smiles = st.text_input("SMILES Compound Input", value="CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S")
-    
+    smiles = st.text_input(
+        "SMILES Compound Input", value="CCn1c(/N=C/c2ccc(Br)cc2)c(C#N)sc1=S"
+    )
+
     # Model mode is set to unified precise model
-    mode = "precise"
-    
+
     threshold = 6.0
 
     if st.button("Predict"):
@@ -200,33 +208,36 @@ def _section_single_prediction():
             # 1. Chemical Structure Visualization (Side-by-side Columns)
             mol_block, min_charge, max_charge = generate_3d_conformer(smiles)
             svg = draw_2d_svg(smiles)
-            
+
             col_2d, col_3d = st.columns(2)
             with col_2d:
                 if svg is not None:
-                    st.image(svg, caption="2D Vector Depiction", use_container_width=True)
+                    st.image(
+                        svg, caption="2D Vector Depiction", use_container_width=True
+                    )
                     st.download_button(
                         label="Download 2D SVG",
                         data=svg,
                         file_name="structure_2d.svg",
-                        mime="image/svg+xml"
+                        mime="image/svg+xml",
                     )
                 else:
                     st.warning("Could not render 2D structure – is the SMILES valid?")
             with col_3d:
                 if mol_block is not None:
                     st.components.v1.html(render_3d_viewer(mol_block), height=360)
-                    
+
                     from src.app.components.structure_viz import generate_pdb_block
+
                     pdb_block = generate_pdb_block(smiles)
-                    
+
                     c_sdf, c_pdb = st.columns(2)
                     with c_sdf:
                         st.download_button(
                             label="Download 3D SDF",
                             data=mol_block,
                             file_name="conformer_3d.sdf",
-                            mime="chemical/x-mdl-sdfile"
+                            mime="chemical/x-mdl-sdfile",
                         )
                     with c_pdb:
                         if pdb_block is not None:
@@ -234,7 +245,7 @@ def _section_single_prediction():
                                 label="Download 3D PDB",
                                 data=pdb_block,
                                 file_name="conformer_3d.pdb",
-                                mime="chemical/x-pdb"
+                                mime="chemical/x-pdb",
                             )
                 else:
                     st.warning("Could not generate 3D conformer.")
@@ -252,10 +263,12 @@ def _section_single_prediction():
             # 3. Data Source Information
             if r["in_database"]:
                 st.success("Experimental data retrieved from ChEMBL (Database Hit).")
-                st.caption("Note: Missing experimental values for specific subtypes are assumed as 0.000 per experimental protocol.")
+                st.caption(
+                    "Note: Missing experimental values for specific subtypes are assumed as 0.000 per experimental protocol."
+                )
             else:
                 st.info("ML Ensemble model prediction (Novel Molecule).")
-           
+
             # 4. Physicochemical Profile & Gasteiger Charges
             st.subheader("Physicochemical Profile")
             d = r["descriptors"]
@@ -264,17 +277,17 @@ def _section_single_prediction():
             c2.metric("LogP", d["LogP"])
             c3.metric("H-Bond Donors", d["HBD"])
             c4.metric("H-Bond Acceptors", d["HBA"])
-            
+
             c5, c6, c7, c8 = st.columns(4)
             c5.metric("Rotatable Bonds", d["RotBonds"])
             c6.metric("Aromatic Rings", d["AromRings"])
             c7.metric("TPSA", d["TPSA"])
-            
+
             # Fetch QED score dynamically
             profile = qed_profile(smiles)
             qed_val = profile.get("QED", 0.0) if profile else 0.0
             c8.metric("QED Score", f"{qed_val:.3f}")
-            
+
             c9, c10, _, _ = st.columns(4)
             c9.metric("Min Gasteiger Charge", f"{min_charge:.3f}")
             c10.metric("Max Gasteiger Charge", f"{max_charge:.3f}")
@@ -282,8 +295,8 @@ def _section_single_prediction():
             # 5. Subtype Bioactivity Profile
             st.subheader("Subtype Bioactivity Profile")
             st.write(f"**Primary Target Receptor:** {r['best_target']}")
-            preds, unc = r["predictions"], r["uncertainty"]
-            
+            preds, _unc = r["predictions"], r["uncertainty"]
+
             rows = []
             for k in SUBTYPES:
                 row = {"Subtype": k}
@@ -291,9 +304,13 @@ def _section_single_prediction():
                     if model_name in preds and k in preds[model_name]:
                         p_val = round(float(preds[model_name][k]), 3)
                         row[f"{model_name} pChEMBL"] = p_val
-                        
+
                         if model_name == "XGBoost":
-                            if "intervals" in r and model_name in r["intervals"] and k in r["intervals"][model_name]:
+                            if (
+                                "intervals" in r
+                                and model_name in r["intervals"]
+                                and k in r["intervals"][model_name]
+                            ):
                                 low = round(r["intervals"][model_name][k]["lower"], 3)
                                 high = round(r["intervals"][model_name][k]["upper"], 3)
                                 row["XGBoost 90% Interval"] = f"[{low}, {high}]"
@@ -302,7 +319,7 @@ def _section_single_prediction():
                 row["Hit (XGB Reference)"] = k in r["target_hits"]
                 rows.append(row)
             st.table(rows)
-            
+
             # Export results table as CSV
             pred_df = pd.DataFrame(rows)
             pred_csv = pred_df.to_csv(index=False).encode("utf-8")
@@ -311,130 +328,173 @@ def _section_single_prediction():
                 data=pred_csv,
                 file_name="adenosine_predictions.csv",
                 mime="text/csv",
-                key="dl_single_predictions_csv"
+                key="dl_single_predictions_csv",
             )
 
             if r["target_hits"]:
                 st.write("**Targets above threshold:**", ", ".join(r["target_hits"]))
             else:
-                st.write("**No targets met the standard active threshold (pChEMBL ≥ 6.0).**")
+                st.write(
+                    "**No targets met the standard active threshold (pChEMBL ≥ 6.0).**"
+                )
 
             # 6. Live Local SHAP explanation
             if r["source"] == "model":
                 st.subheader("SHAP Feature Attribution (Explainability)")
-                st.write(f"Local feature contributions for the predicted **{r['best_target']}** affinity:")
+                st.write(
+                    f"Local feature contributions for the predicted **{r['best_target']}** affinity:"
+                )
                 try:
                     from src.features import build_features
-                    
+
                     # Load conformal model
-                    model_path = Path(f"models/precise/xgboost_precise_{r['best_target'].lower()}_model.pkl")
+                    model_path = Path(
+                        f"models/precise/xgboost_precise_{r['best_target'].lower()}_model.pkl"
+                    )
                     if not model_path.exists():
-                        model_path = Path(f"models/xgboost_{r['best_target'].lower()}_model.pkl")
-                    
+                        model_path = Path(
+                            f"models/xgboost_{r['best_target'].lower()}_model.pkl"
+                        )
+
                     with open(model_path, "rb") as f_model:
                         model_conformal = pickle.load(f_model)
-                    
+
                     # Extract base estimator
                     if type(model_conformal).__name__ == "CrossConformalRegressor":
-                        estimator = model_conformal._mapie_regressor.estimator_.estimators_[0]
+                        estimator = (
+                            model_conformal._mapie_regressor.estimator_.estimators_[0]
+                        )
                     elif type(model_conformal).__name__ == "MapieRegressor":
                         estimator = model_conformal.estimators_[0]
                     elif isinstance(model_conformal, list) and len(model_conformal) > 0:
                         estimator = model_conformal[0]
                     else:
                         estimator = model_conformal
-                    
+
                     # Load scaler
                     with open("models/scaler.pkl", "rb") as f_scaler:
                         pipeline = pickle.load(f_scaler)
-                    
+
                     # Reconstruct feature names
-                    feature_names = [f"Morgan_FP_{i}" for i in range(2048)] + [f"MACCS_{i}" for i in range(167)]
+                    feature_names = [f"Morgan_FP_{i}" for i in range(2048)] + [
+                        f"MACCS_{i}" for i in range(167)
+                    ]
                     selected_desc_names = pipeline.feature_filter.feature_names
                     feature_names.extend(selected_desc_names)
-                    
+
                     # Generate x
                     x = build_features(canon, pipeline).reshape(1, -1)
-                    
+
                     # Compute local SHAP with feature names mapped properly
                     X_df = pd.DataFrame(x, columns=feature_names)
                     explainer = shap.TreeExplainer(estimator)
                     shap_values = explainer(X_df)
-                    
+
                     fig, ax = plt.subplots(figsize=(8, 4.5))
                     shap.plots.waterfall(shap_values[0], max_display=8, show=False)
-                    plt.title(f"SHAP Local Contribution Breakdown: {r['best_target']}", fontsize=11, fontweight="bold")
+                    plt.title(
+                        f"SHAP Local Contribution Breakdown: {r['best_target']}",
+                        fontsize=11,
+                        fontweight="bold",
+                    )
                     plt.tight_layout()
                     st.pyplot(fig)
                     plt.close()
-                    
+
                     # Chemical explanation for top contributors
                     import numpy as np
+
                     sv = shap_values[0]
                     top_indices = np.argsort(np.abs(sv.values))[::-1][:5]
-                    
-                    st.markdown("#### 🔬 Medicinal Chemistry Translation of Contributing Features")
-                    st.write("Interpretation of the most significant descriptors driving this specific prediction:")
-                    
+
+                    st.markdown(
+                        "#### 🔬 Medicinal Chemistry Translation of Contributing Features"
+                    )
+                    st.write(
+                        "Interpretation of the most significant descriptors driving this specific prediction:"
+                    )
+
                     explanations = []
                     for idx in top_indices:
                         f_name = feature_names[idx]
                         f_val = sv.data[idx]
                         shap_val = sv.values[idx]
-                        
+
                         exp = explain_feature_chemically(f_name, f_val, smiles)
                         if exp:
-                            direction = "📈 Increases Affinity" if shap_val > 0 else "📉 Decreases Affinity"
-                            explanations.append({
-                                "Feature": f_name,
-                                "Feature Type": exp["Type"],
-                                "Value in Query": exp["Query Value"],
-                                "Impact on Affinity": f"{direction} (SHAP = {shap_val:+.3f})",
-                                "Chemical Interpretation / Environment Map": exp["Interpretation"]
-                            })
-                            
+                            direction = (
+                                "📈 Increases Affinity"
+                                if shap_val > 0
+                                else "📉 Decreases Affinity"
+                            )
+                            explanations.append(
+                                {
+                                    "Feature": f_name,
+                                    "Feature Type": exp["Type"],
+                                    "Value in Query": exp["Query Value"],
+                                    "Impact on Affinity": f"{direction} (SHAP = {shap_val:+.3f})",
+                                    "Chemical Interpretation / Environment Map": exp[
+                                        "Interpretation"
+                                    ],
+                                }
+                            )
+
                     if explanations:
-                        st.dataframe(pd.DataFrame(explanations), use_container_width=True)
+                        st.dataframe(
+                            pd.DataFrame(explanations), use_container_width=True
+                        )
                 except Exception as e:
                     st.caption(f"SHAP visual attribution details: {e}")
 
             # 7. Direct Selectivity Profile (ΔpChEMBL)
             if "selectivity_profile" in r and r["selectivity_profile"]:
                 st.subheader("Direct Selectivity Profile (ΔpChEMBL)")
-                st.write("Direct pairwise selectivity estimates utilizing delta-affinity models:")
+                st.write(
+                    "Direct pairwise selectivity estimates utilizing delta-affinity models:"
+                )
                 sel_rows = []
                 for pair, diff in r["selectivity_profile"].items():
                     subA, subB = pair.split("_vs_")
                     preferred = subA if diff > 0 else subB
                     fold_ratio = round(10 ** abs(diff), 1)
-                    
-                    sel_rows.append({
-                        "Comparison": f"{subA} vs {subB}",
-                        "Predicted ΔpChEMBL": diff,
-                        "Preferred Subtype": preferred,
-                        "Affinity Ratio (Fold Preference)": f"{fold_ratio}x"
-                    })
+
+                    sel_rows.append(
+                        {
+                            "Comparison": f"{subA} vs {subB}",
+                            "Predicted ΔpChEMBL": diff,
+                            "Preferred Subtype": preferred,
+                            "Affinity Ratio (Fold Preference)": f"{fold_ratio}x",
+                        }
+                    )
                 st.table(sel_rows)
 
             # 8. Reliability / Applicability Domain
             st.subheader("Reliability / Applicability Domain")
             sim = nearest_tanimoto(smiles)
             if sim is None:
-                st.warning("AD cache missing. Run the feature pipeline to generate data/processed/train_fps.pkl.")
+                st.warning(
+                    "AD cache missing. Run the feature pipeline to generate data/processed/train_fps.pkl."
+                )
             else:
                 label = _ad_label(sim)
                 st.metric("Nearest Tanimoto (train)", f"{sim:.3f}")
                 if label == "High":
-                    st.success(f"Reliability: {label} (≥ 0.6 – well within training domain).")
+                    st.success(
+                        f"Reliability: {label} (≥ 0.6 – well within training domain)."
+                    )
                 elif label == "Medium":
-                    st.warning(f"Reliability: {label} (0.4 – 0.6 – moderate confidence).")
+                    st.warning(
+                        f"Reliability: {label} (0.4 – 0.6 – moderate confidence)."
+                    )
                 else:
-                    st.error(f"Reliability: {label} (< 0.4 – out-of-domain; use with caution).")
+                    st.error(
+                        f"Reliability: {label} (< 0.4 – out-of-domain; use with caution)."
+                    )
 
             # 9. Safety & Drug-Likeness Profiles
             st.subheader("Safety & Drug-Likeness")
             col_pains, col_qed = st.columns(2)
-            
+
             with col_pains:
                 alerts = check_pains(smiles)
                 if alerts:
@@ -452,22 +512,31 @@ def _section_single_prediction():
             st.subheader("Pharmacophore Matching Profile")
             try:
                 from src.pharmacophore import AdenosinePharmacophoreAnalyzer
+
                 pm_res = AdenosinePharmacophoreAnalyzer.analyze_molecule(smiles)
                 if "error" not in pm_res:
-                    st.write("2D pharmacophoric matching scores against the structural requirements for adenosine receptor subtypes:")
-                    
+                    st.write(
+                        "2D pharmacophoric matching scores against the structural requirements for adenosine receptor subtypes:"
+                    )
+
                     sc1, sc2, sc3, sc4 = st.columns(4)
                     sc1.metric("A1 Match Score", f"{pm_res['scores']['A1']}%")
                     sc2.metric("A2A Match Score", f"{pm_res['scores']['A2A']}%")
                     sc3.metric("A2B Match Score", f"{pm_res['scores']['A2B']}%")
                     sc4.metric("A3 Match Score", f"{pm_res['scores']['A3']}%")
-                    
+
                     with st.expander("Show detailed pharmacophore matching features"):
-                        st.write("**Core Binding Requirements (Pi-Pi Stacking & H-Bond Network):**")
+                        st.write(
+                            "**Core Binding Requirements (Pi-Pi Stacking & H-Bond Network):**"
+                        )
                         for feat, details in pm_res["core_features"].items():
-                            status = "✅ Matched" if details["matched"] else "❌ Missing"
-                            st.write(f"- **{feat}:** {status} ({details['description']})")
-                            
+                            status = (
+                                "✅ Matched" if details["matched"] else "❌ Missing"
+                            )
+                            st.write(
+                                f"- **{feat}:** {status} ({details['description']})"
+                            )
+
                         st.write("**Subtype-Specific Selectivity Motifs:**")
                         for st_name, feats in pm_res["subtype_features"].items():
                             st.write(f"**{st_name} Receptor:**")
@@ -486,36 +555,64 @@ def _section_single_prediction():
                 dock_preds = r["docking_scores"]
                 d_rows = []
                 for sub in SUBTYPES:
-                    d_rows.append({
-                        "Subtype": sub,
-                        "Docking Score (kcal/mol)": f"{dock_preds.get(sub, 'N/A')} kcal/mol" if dock_preds.get(sub) is not None else "N/A"
-                    })
+                    d_rows.append(
+                        {
+                            "Subtype": sub,
+                            "Docking Score (kcal/mol)": f"{dock_preds.get(sub, 'N/A')} kcal/mol"
+                            if dock_preds.get(sub) is not None
+                            else "N/A",
+                        }
+                    )
                 st.table(d_rows)
             else:
-                st.warning("⚠️ **3D Conformation Required**: Pre-computed docking scores are not available for this novel compound.")
+                st.warning(
+                    "⚠️ **3D Conformation Required**: Pre-computed docking scores are not available for this novel compound."
+                )
                 st.info(
                     "3D molecular docking requires receptor-ligand configurations and cannot be calculated on-the-fly. "
                     "Below are the reference docking statistics calculated across the 9,589 database compounds to help you gauge "
                     "if your molecule fits the typical affinity profile of selective binders (strong active ligands typically have docking energies < -8.5 kcal/mol)."
                 )
-                
+
                 # Render a reference statistics table
                 ref_stats = [
-                    {"Subtype": "A1", "Mean Docking (kcal/mol)": "-5.71", "Active Range (p25 - p75)": "-5.78 to -4.59", "Strong Binder Limit": "< -8.5"},
-                    {"Subtype": "A2A", "Mean Docking (kcal/mol)": "-6.65", "Active Range (p25 - p75)": "-9.04 to -4.77", "Strong Binder Limit": "< -9.0"},
-                    {"Subtype": "A2B", "Mean Docking (kcal/mol)": "-5.77", "Active Range (p25 - p75)": "-5.83 to -4.62", "Strong Binder Limit": "< -8.0"},
-                    {"Subtype": "A3", "Mean Docking (kcal/mol)": "-6.31", "Active Range (p25 - p75)": "-8.39 to -4.73", "Strong Binder Limit": "< -8.5"},
+                    {
+                        "Subtype": "A1",
+                        "Mean Docking (kcal/mol)": "-5.71",
+                        "Active Range (p25 - p75)": "-5.78 to -4.59",
+                        "Strong Binder Limit": "< -8.5",
+                    },
+                    {
+                        "Subtype": "A2A",
+                        "Mean Docking (kcal/mol)": "-6.65",
+                        "Active Range (p25 - p75)": "-9.04 to -4.77",
+                        "Strong Binder Limit": "< -9.0",
+                    },
+                    {
+                        "Subtype": "A2B",
+                        "Mean Docking (kcal/mol)": "-5.77",
+                        "Active Range (p25 - p75)": "-5.83 to -4.62",
+                        "Strong Binder Limit": "< -8.0",
+                    },
+                    {
+                        "Subtype": "A3",
+                        "Mean Docking (kcal/mol)": "-6.31",
+                        "Active Range (p25 - p75)": "-8.39 to -4.73",
+                        "Strong Binder Limit": "< -8.5",
+                    },
                 ]
-                st.write("**Database Docking Reference Distribution (9,589 compounds):**")
+                st.write(
+                    "**Database Docking Reference Distribution (9,589 compounds):**"
+                )
                 st.table(ref_stats)
 
             # Top-5 Similar Training Molecules - Only if NOT in database
             st.subheader("Top-5 Similar Training Molecules (Tanimoto, Morgan r=2)")
-            
+
             try:
                 # Get the canonical smiles and top similarities
                 canon_smi, top_sims = topk_tanimoto(smiles, k=5)
-                
+
                 if canon_smi is None:
                     st.write("No similarity results (invalid SMILES).")
                 elif not top_sims:
@@ -525,12 +622,16 @@ def _section_single_prediction():
                     )
                 else:
                     st.markdown(f"**Canonical SMILES Query:** `{canon_smi}`")
-                    
+
                     # Display the table
-                    sim_rows = [{"Train SMILES": s, "Tanimoto": round(sim, 4)} for s, sim in top_sims]
+                    sim_rows = [
+                        {"Train SMILES": s, "Tanimoto": round(sim, 4)}
+                        for s, sim in top_sims
+                    ]
                     st.table(sim_rows)
             except Exception as e:
                 st.error(f"Similarity search failed: {e}")
+
 
 def _section_batch_prediction():
     st.header("Batch CSV Prediction")
@@ -542,53 +643,84 @@ def _section_batch_prediction():
 
     df = pd.read_csv(uploaded)
     # Using the helper from the component to stay consistent
-    from src.app.components.batch_predict import _infer_smiles_col 
+
     smiles_col = _infer_smiles_col(df)
     st.write(f"Detected SMILES column: **{smiles_col}** | Total Rows: {len(df)}")
 
     # Model mode is set to unified precise model
     mode = "precise"
-    
+
     threshold = 6.0
 
     if st.button("Run Batch Prediction"):
         with st.spinner("Processing..."):
-            result_df = predict_batch(df, threshold=threshold, smiles_col=smiles_col, mode=mode)
+            result_df = predict_batch(
+                df, threshold=threshold, smiles_col=smiles_col, mode=mode
+            )
 
         # Check for errors column securely
         if "error" in result_df.columns:
             err_count = result_df["error"].notna().sum()
             if err_count > 0:
-                st.warning(f"Processed {len(result_df)} rows; {err_count} invalid SMILES skipped.")
-        
+                st.warning(
+                    f"Processed {len(result_df)} rows; {err_count} invalid SMILES skipped."
+                )
+
         # Display the 4 independent subtype results
-        display_cols = [smiles_col, 'A1', 'A2A', 'A2B', 'A3', 'best_target', 'in_database']
+        display_cols = [
+            smiles_col,
+            "A1",
+            "A2A",
+            "A2B",
+            "A3",
+            "best_target",
+            "in_database",
+        ]
         existing = [c for c in display_cols if c in result_df.columns]
         st.dataframe(result_df[existing], use_container_width=True)
 
         csv = result_df.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Results", data=csv, file_name="ar_batch_results.csv")
+        st.download_button(
+            "Download Results", data=csv, file_name="ar_batch_results.csv"
+        )
+
 
 def _section_results():
     st.header("Model Validation & Diagnostics Results")
-    
-    view_mode = "precise"
-    
-    tab_metrics, tab_shap_y, tab_a1_diag, tab_examples, tab_gnn, tab_external, tab_lit = st.tabs([
-        "Validation Metrics", "TreeSHAP & Y-Randomization", "Dataset Quality Diagnostics", "Example Predictions",
-        "GNN Comparison", "External Validation", "Literature Benchmark"
-    ])
-  
+
+
+    (
+        tab_metrics,
+        tab_shap_y,
+        tab_a1_diag,
+        tab_examples,
+        tab_gnn,
+        tab_external,
+        tab_lit,
+    ) = st.tabs(
+        [
+            "Validation Metrics",
+            "TreeSHAP & Y-Randomization",
+            "Dataset Quality Diagnostics",
+            "Example Predictions",
+            "GNN Comparison",
+            "External Validation",
+            "Literature Benchmark",
+        ]
+    )
+
     with tab_metrics:
         # Check if we have Nested CV report to show
         nested_cv_report = Path("outputs/nested_cv/merged_report.md")
         if nested_cv_report.exists():
             st.subheader("Deterministic Nested Cross-Validation (Scaffold Split + HPO)")
-            st.write("Aggregated 5-fold outer scaffold scaffold-split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):")
+            st.write(
+                "Aggregated 5-fold outer scaffold scaffold-split performance with Optuna hyperparameter optimization in the inner loop (laptop-safe sequential chunks):"
+            )
             with open(nested_cv_report, "r") as f_ncv:
                 st.markdown(f_ncv.read())
             st.divider()
-            
+
         try:
             base_dir = "outputs/validoutput/precise"
             overall_df, per_df = load_evaluation_tables(base_dir)
@@ -600,7 +732,7 @@ def _section_results():
                 st.dataframe(per_df, use_container_width=True)
         except Exception as e:
             st.warning(f"Could not load evaluation report: {e}")
-  
+
         img_path = "outputs/validoutput/precise/calibration_precise_plot.png"
         if not Path(img_path).exists():
             img_path = "outputs/validoutput/precise/calibration_root_plot.png"
@@ -609,45 +741,85 @@ def _section_results():
         if Path(img_path).exists():
             st.subheader("Calibration Plot (PRECISE Mode)")
             st.image(img_path, use_container_width=True)
-  
+
     with tab_a1_diag:
         st.subheader("Dataset Quality & Activity Cliff Diagnostics")
-        st.write("Curated dataset analysis of adenosine receptor subtypes identifying structural bottlenecks:")
-        
-        diag_choice = st.selectbox(
-            "Select Diagnostic Target", 
-            ["Combined Overview", "A1 Subtype", "A2A Subtype", "A2B Subtype", "A3 Subtype"],
-            key="diagnostics_selector"
+        st.write(
+            "Curated dataset analysis of adenosine receptor subtypes identifying structural bottlenecks:"
         )
-        
+
+        diag_choice = st.selectbox(
+            "Select Diagnostic Target",
+            [
+                "Combined Overview",
+                "A1 Subtype",
+                "A2A Subtype",
+                "A2B Subtype",
+                "A3 Subtype",
+            ],
+            key="diagnostics_selector",
+        )
+
         if diag_choice == "Combined Overview":
-            diag_report_path = Path("outputs/diagnostics/combined_diagnosis_report.json")
+            diag_report_path = Path(
+                "outputs/diagnostics/combined_diagnosis_report.json"
+            )
             if diag_report_path.exists():
                 with open(diag_report_path, "r") as f_diag:
                     diag_data = json.load(f_diag)
-                
+
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total Curated Compounds", diag_data["n_compounds"])
-                col2.metric("Unique Murcko Scaffolds", diag_data["scaffold_diversity"]["n_unique_scaffolds"])
-                col3.metric("Combined Scaffold Ratio", f"{diag_data['scaffold_diversity']['diversity_ratio']:.3f}")
-                
+                col2.metric(
+                    "Unique Murcko Scaffolds",
+                    diag_data["scaffold_diversity"]["n_unique_scaffolds"],
+                )
+                col3.metric(
+                    "Combined Scaffold Ratio",
+                    f"{diag_data['scaffold_diversity']['diversity_ratio']:.3f}",
+                )
+
                 # Show subtype breakdown table
                 st.markdown("### 📊 Subtype Compound Distribution")
                 sb = diag_data["target_subtype_breakdown"]
-                sb_df = pd.DataFrame([{"Receptor Subtype": k, "Compound Count": v, "Percentage": f"{v/diag_data['n_compounds']*100:.1f}%"} for k, v in sb.items()])
+                sb_df = pd.DataFrame(
+                    [
+                        {
+                            "Receptor Subtype": k,
+                            "Compound Count": v,
+                            "Percentage": f"{v / diag_data['n_compounds'] * 100:.1f}%",
+                        }
+                        for k, v in sb.items()
+                    ]
+                )
                 st.dataframe(sb_df, use_container_width=True)
-                
+
                 # Combined pChEMBL distribution plot
-                dist_plot = Path("outputs/diagnostics/combined_pchembl_distribution.png")
+                dist_plot = Path(
+                    "outputs/diagnostics/combined_pchembl_distribution.png"
+                )
                 if dist_plot.exists():
-                    st.image(str(dist_plot), caption="Combined pChEMBL Affinity Distribution Profile", use_container_width=True)
-                
+                    st.image(
+                        str(dist_plot),
+                        caption="Combined pChEMBL Affinity Distribution Profile",
+                        use_container_width=True,
+                    )
+
                 # Standard type breakdown
                 st.markdown("### 🧬 Experimental Assay Measurement Types")
                 tb = diag_data["standard_type_breakdown"]
-                tb_df = pd.DataFrame([{"Measurement (Standard Type)": k, "Count": v, "Percentage": f"{v/diag_data['n_compounds']*100:.1f}%"} for k, v in tb.items()])
+                tb_df = pd.DataFrame(
+                    [
+                        {
+                            "Measurement (Standard Type)": k,
+                            "Count": v,
+                            "Percentage": f"{v / diag_data['n_compounds'] * 100:.1f}%",
+                        }
+                        for k, v in tb.items()
+                    ]
+                )
                 st.dataframe(tb_df, use_container_width=True)
-                
+
                 # Model-diagnostics insight
                 st.markdown("""
                 > **💡 Cheminformatics Insight & Model Performance Link:**
@@ -656,69 +828,125 @@ def _section_results():
                 > Subtypes **A1**, **A2A**, and **A2B** have all risen to high accuracy ($R^2 = 0.80 \text{--} 0.83$) thanks to the integration of structural P2Y decoys which mapped GPCR class boundaries and eliminated false-positive predictions.
                 """)
             else:
-                st.info("Combined diagnostics report not generated yet. Run the pipeline to populate.")
-                
+                st.info(
+                    "Combined diagnostics report not generated yet. Run the pipeline to populate."
+                )
+
         else:
             # Map choice to subtype
             subtype_map = {
                 "A1 Subtype": "a1",
                 "A2A Subtype": "a2a",
                 "A2B Subtype": "a2b",
-                "A3 Subtype": "a3"
+                "A3 Subtype": "a3",
             }
             subtype_prefix = subtype_map[diag_choice]
-            subtype_name = diag_choice.split(" ")[0] # e.g. "A1"
-            
-            diag_report_path = Path(f"outputs/diagnostics/{subtype_prefix}_diagnosis_report.json")
+            subtype_name = diag_choice.split(" ")[0]  # e.g. "A1"
+
+            diag_report_path = Path(
+                f"outputs/diagnostics/{subtype_prefix}_diagnosis_report.json"
+            )
             if diag_report_path.exists():
                 with open(diag_report_path, "r") as f_diag:
                     diag_data = json.load(f_diag)
-                    
+
                 col_sub_1, col_sub_2 = st.columns(2)
                 with col_sub_1:
-                    st.metric(f"Total {subtype_name} Compounds", diag_data["n_compounds"])
-                    st.metric("Unique Scaffolds", diag_data["scaffold_diversity"]["n_unique_scaffolds"])
-                    st.metric("Scaffold Diversity Ratio", f"{diag_data['scaffold_diversity']['diversity_ratio']:.3f}")
+                    st.metric(
+                        f"Total {subtype_name} Compounds", diag_data["n_compounds"]
+                    )
+                    st.metric(
+                        "Unique Scaffolds",
+                        diag_data["scaffold_diversity"]["n_unique_scaffolds"],
+                    )
+                    st.metric(
+                        "Scaffold Diversity Ratio",
+                        f"{diag_data['scaffold_diversity']['diversity_ratio']:.3f}",
+                    )
                 with col_sub_2:
-                    st.metric("Activity Cliffs Detected", diag_data["n_activity_cliffs"])
+                    st.metric(
+                        "Activity Cliffs Detected", diag_data["n_activity_cliffs"]
+                    )
                     mean_val = diag_data["pchembl_stats"]["mean"]
                     std_val = diag_data["pchembl_stats"]["std"]
                     st.metric("pChEMBL Range", f"{mean_val:.2f} ± {std_val:.2f}")
-                    
+
                 # Display plots if they exist
-                dist_plot = Path(f"outputs/diagnostics/{subtype_prefix}_pchembl_distribution.png")
+                dist_plot = Path(
+                    f"outputs/diagnostics/{subtype_prefix}_pchembl_distribution.png"
+                )
                 if dist_plot.exists():
-                    st.image(str(dist_plot), caption=f"{subtype_name} pChEMBL Distribution Profile", use_container_width=True)
-                    
-                cliff_plot = Path(f"outputs/diagnostics/{subtype_prefix}_activity_cliffs_shifts.png")
+                    st.image(
+                        str(dist_plot),
+                        caption=f"{subtype_name} pChEMBL Distribution Profile",
+                        use_container_width=True,
+                    )
+
+                cliff_plot = Path(
+                    f"outputs/diagnostics/{subtype_prefix}_activity_cliffs_shifts.png"
+                )
                 if cliff_plot.exists():
-                    st.image(str(cliff_plot), caption=f"{subtype_name} Activity Cliff Magnitude Distribution", use_container_width=True)
-                    
+                    st.image(
+                        str(cliff_plot),
+                        caption=f"{subtype_name} Activity Cliff Magnitude Distribution",
+                        use_container_width=True,
+                    )
+
                 if diag_data["activity_cliffs"]:
-                    st.subheader(f"Top Detected Activity Cliffs in {subtype_name} (Tanimoto Similarity ≥ 0.8, |ΔpChEMBL| ≥ 1.5)")
+                    st.subheader(
+                        f"Top Detected Activity Cliffs in {subtype_name} (Tanimoto Similarity ≥ 0.8, |ΔpChEMBL| ≥ 1.5)"
+                    )
                     cliff_df = pd.DataFrame(diag_data["activity_cliffs"])
-                    st.dataframe(cliff_df[["tanimoto_similarity", "pchembl_difference", "compound_1_pchembl", "compound_2_pchembl"]], use_container_width=True)
+                    st.dataframe(
+                        cliff_df[
+                            [
+                                "tanimoto_similarity",
+                                "pchembl_difference",
+                                "compound_1_pchembl",
+                                "compound_2_pchembl",
+                            ]
+                        ],
+                        use_container_width=True,
+                    )
             else:
-                st.info(f"{subtype_name} Diagnostics report not generated yet. Run the pipeline to populate.")
-            
+                st.info(
+                    f"{subtype_name} Diagnostics report not generated yet. Run the pipeline to populate."
+                )
+
     with tab_shap_y:
         st.subheader("TreeSHAP Global Explainability & Y-Randomization Validation")
-        st.write("Chemical sanity checks and label-shuffling tests to verify structural target relationship:")
-        
-        subtype_choice = st.selectbox("Select Subtype for SHAP & Y-Randomization", ["A1", "A2A", "A2B", "A3"], key="shap_y_selector")
-        
+        st.write(
+            "Chemical sanity checks and label-shuffling tests to verify structural target relationship:"
+        )
+
+        subtype_choice = st.selectbox(
+            "Select Subtype for SHAP & Y-Randomization",
+            ["A1", "A2A", "A2B", "A3"],
+            key="shap_y_selector",
+        )
+
         col_shap, col_yrand = st.columns(2)
         with col_shap:
             st.markdown(f"### Global TreeSHAP Feature Importance ({subtype_choice})")
-            st.write("Attribution of continuous descriptors and structural fingerprint features:")
+            st.write(
+                "Attribution of continuous descriptors and structural fingerprint features:"
+            )
             shap_bar = Path(f"outputs/shap/{subtype_choice}_bar.png")
             shap_beeswarm = Path(f"outputs/shap/{subtype_choice}_beeswarm.png")
-            
+
             if shap_bar.exists():
-                st.image(str(shap_bar), caption="SHAP Global Mean Absolute Attribution", use_container_width=True)
+                st.image(
+                    str(shap_bar),
+                    caption="SHAP Global Mean Absolute Attribution",
+                    use_container_width=True,
+                )
             if shap_beeswarm.exists():
-                st.image(str(shap_beeswarm), caption="SHAP Beeswarm Distribution Plot", use_container_width=True)
-                
+                st.image(
+                    str(shap_beeswarm),
+                    caption="SHAP Beeswarm Distribution Plot",
+                    use_container_width=True,
+                )
+
             shap_report_path = Path(f"outputs/shap/{subtype_choice}_shap_report.json")
             if shap_report_path.exists():
                 with open(shap_report_path, "r") as f_shap:
@@ -726,31 +954,54 @@ def _section_results():
                 sanity = shap_data["sanity_check"]
                 st.markdown(f"**Chemical Sanity Check: `{sanity['status']}`**")
                 st.write(sanity["message"])
-                st.write(f"Key expected descriptors identified: `{', '.join(sanity['expected_features_found'])}`")
+                st.write(
+                    f"Key expected descriptors identified: `{', '.join(sanity['expected_features_found'])}`"
+                )
             else:
-                st.info("SHAP explainability plots not generated yet. Run the pipeline.")
-                
+                st.info(
+                    "SHAP explainability plots not generated yet. Run the pipeline."
+                )
+
         with col_yrand:
             st.markdown(f"### Y-Randomization Validation ({subtype_choice})")
-            st.write("Shuffling pChEMBL labels to ensure models don't overfit to noise or spurious background features:")
-            
-            yrand_plot = Path(f"outputs/y_randomization/{subtype_choice}_distribution.png")
+            st.write(
+                "Shuffling pChEMBL labels to ensure models don't overfit to noise or spurious background features:"
+            )
+
+            yrand_plot = Path(
+                f"outputs/y_randomization/{subtype_choice}_distribution.png"
+            )
             if yrand_plot.exists():
-                st.image(str(yrand_plot), caption="Y-Randomization Label-Shuffled R² Distribution", use_container_width=True)
-                
-            yrand_report_path = Path(f"outputs/y_randomization/{subtype_choice}_report.json")
+                st.image(
+                    str(yrand_plot),
+                    caption="Y-Randomization Label-Shuffled R² Distribution",
+                    use_container_width=True,
+                )
+
+            yrand_report_path = Path(
+                f"outputs/y_randomization/{subtype_choice}_report.json"
+            )
             if yrand_report_path.exists():
                 with open(yrand_report_path, "r") as f_yrand:
                     yrand_data = json.load(f_yrand)
                 st.metric("Real Model R² Score", f"{yrand_data['real_r2']:.3f}")
-                st.metric("Label-Shuffled R² Score", f"{yrand_data['shuffled_r2_mean']:.3f} ± {yrand_data['shuffled_r2_std']:.3f}")
+                st.metric(
+                    "Label-Shuffled R² Score",
+                    f"{yrand_data['shuffled_r2_mean']:.3f} ± {yrand_data['shuffled_r2_std']:.3f}",
+                )
                 if yrand_data["leakage_warning"]:
-                    st.error("WARNING: Shuffled R² is high! Spurious target leakage detected.")
+                    st.error(
+                        "WARNING: Shuffled R² is high! Spurious target leakage detected."
+                    )
                 else:
-                    st.success("SUCCESS: Shuffled R² is near-zero. Model represents true chemical target SAR.")
+                    st.success(
+                        "SUCCESS: Shuffled R² is near-zero. Model represents true chemical target SAR."
+                    )
             else:
-                st.info("Y-Randomization statistics not generated yet. Run the pipeline.")
- 
+                st.info(
+                    "Y-Randomization statistics not generated yet. Run the pipeline."
+                )
+
     with tab_examples:
         try:
             st.subheader("Run Summary (PRECISE Mode)")
@@ -773,21 +1024,23 @@ def _section_results():
                 gnn_rows = []
                 for st_name in SUBTYPES:
                     st_data = eval_data.get("per_subtype", {}).get(st_name, {})
-                    gnn_rows.append({
-                        "Subtype": st_name,
-                        "XGBoost R²": st_data.get("model_r2"),
-                        "XGBoost MAE": st_data.get("model_mae"),
-                        "Random Forest R²": st_data.get("rf_r2"),
-                        "Random Forest MAE": st_data.get("rf_mae"),
-                        "GNN R²": st_data.get("gnn_r2"),
-                        "GNN MAE": st_data.get("gnn_mae"),
-                    })
+                    gnn_rows.append(
+                        {
+                            "Subtype": st_name,
+                            "XGBoost R²": st_data.get("model_r2"),
+                            "XGBoost MAE": st_data.get("model_mae"),
+                            "Random Forest R²": st_data.get("rf_r2"),
+                            "Random Forest MAE": st_data.get("rf_mae"),
+                            "GNN R²": st_data.get("gnn_r2"),
+                            "GNN MAE": st_data.get("gnn_mae"),
+                        }
+                    )
                 st.dataframe(pd.DataFrame(gnn_rows), use_container_width=True)
             except Exception as e:
                 st.error(f"Error loading GNN metrics: {e}")
         else:
             st.info("Evaluation report not available.")
-            
+
     with tab_external:
         st.subheader("External Validation (GPCRdb Blind Test)")
         ext_path = Path("outputs/external_validation/external_validation_report.json")
@@ -795,38 +1048,58 @@ def _section_results():
             try:
                 with open(ext_path, "r") as f:
                     ext_data = json.load(f)
-                
+
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Novel External Molecules", ext_data.get("n_novel_molecules", 0))
-                c2.metric("Successful Predictions", ext_data.get("n_successful_predictions", 0))
+                c1.metric(
+                    "Novel External Molecules", ext_data.get("n_novel_molecules", 0)
+                )
+                c2.metric(
+                    "Successful Predictions",
+                    ext_data.get("n_successful_predictions", 0),
+                )
                 c3.metric("Prediction Errors", ext_data.get("n_errors", 0))
-                
+
                 st.write("**Per-Subtype Validation Metrics**")
                 ext_rows = []
                 for st_name, metrics in ext_data.get("per_subtype_metrics", {}).items():
                     if st_name == "selectivity_recall_at_1":
                         continue
                     if metrics.get("insufficient_data"):
-                        ext_rows.append({"Subtype": st_name, "N": metrics.get("n"), "R²": "Insufficient Data", "MAE": "N/A"})
+                        ext_rows.append(
+                            {
+                                "Subtype": st_name,
+                                "N": metrics.get("n"),
+                                "R²": "Insufficient Data",
+                                "MAE": "N/A",
+                            }
+                        )
                     else:
-                        ext_rows.append({
-                            "Subtype": st_name,
-                            "N": metrics.get("n"),
-                            "R²": f"{metrics.get('r2'):.3f}",
-                            "MAE": f"{metrics.get('mae'):.3f}",
-                            "RMSE": f"{metrics.get('rmse'):.3f}",
-                        })
+                        ext_rows.append(
+                            {
+                                "Subtype": st_name,
+                                "N": metrics.get("n"),
+                                "R²": f"{metrics.get('r2'):.3f}",
+                                "MAE": f"{metrics.get('mae'):.3f}",
+                                "RMSE": f"{metrics.get('rmse'):.3f}",
+                            }
+                        )
                 if ext_rows:
                     st.table(pd.DataFrame(ext_rows))
-                    
+
                 if "selectivity_recall_at_1" in ext_data.get("per_subtype_metrics", {}):
                     sel = ext_data["per_subtype_metrics"]["selectivity_recall_at_1"]
-                    st.metric("Selectivity Recall@1 (Accuracy)", f"{sel['accuracy']:.3f}", f"{sel['correct']}/{sel['total']} molecules")
+                    st.metric(
+                        "Selectivity Recall@1 (Accuracy)",
+                        f"{sel['accuracy']:.3f}",
+                        f"{sel['correct']}/{sel['total']} molecules",
+                    )
             except Exception as e:
                 st.error(f"Error loading external validation: {e}")
         else:
-            st.info("External validation report not available. Run `python -m src.external_validation`.")
-            
+            st.info(
+                "External validation report not available. Run `python -m src.external_validation`."
+            )
+
     with tab_lit:
         st.subheader("Literature Benchmarking")
         lit_path = Path("outputs/benchmark/benchmark_comparison.json")
@@ -834,7 +1107,7 @@ def _section_results():
             try:
                 with open(lit_path, "r") as f:
                     lit_data = json.load(f)
-                
+
                 lit_rows = []
                 for model_name, info in lit_data.items():
                     metrics = info.get("metrics", {})
@@ -852,19 +1125,22 @@ def _section_results():
             except Exception as e:
                 st.error(f"Error loading literature benchmark: {e}")
         else:
-            st.info("Literature benchmark not available. Run `python -m src.literature_benchmark`.")
- 
+            st.info(
+                "Literature benchmark not available. Run `python -m src.literature_benchmark`."
+            )
+
+
 def run_app():
     st.set_page_config(page_title="AR Selectivity Predictor", layout="wide")
     st.title("Adenosine Receptor Selectivity Predictor")
-    
+
     # Dynamic metric loading
     report_path = Path("outputs/validoutput/precise/evaluation_precise_report.json")
-    
+
     overall_r2 = "0.845"
     overall_mae = "0.396"
     overall_n = "33,401"
-    
+
     a1_r2, a1_mae, a1_n = "0.809", "0.403", "8,272"
     a2a_r2, a2a_mae, a2a_n = "0.835", "0.529", "8,407"
     a2b_r2, a2b_mae, a2b_n = "0.801", "0.305", "8,290"
@@ -874,14 +1150,14 @@ def run_app():
         try:
             with open(report_path, "r") as f:
                 rep = json.load(f)
-            
+
             ov = rep.get("overall", {})
             if "model_r2" in ov and ov["model_r2"] is not None:
                 overall_r2 = f"{ov['model_r2']:.3f}"
             if "model_mae" in ov and ov["model_mae"] is not None:
                 overall_mae = f"{ov['model_mae']:.3f}"
             overall_n = f"{rep.get('n_train', 0) + rep.get('n_test', 0):,}"
-            
+
             st_data = rep.get("per_subtype", {})
             if "A1" in st_data:
                 a1_r2 = f"{st_data['A1'].get('model_r2', 0):.3f}"
@@ -902,7 +1178,8 @@ def run_app():
         except Exception:
             pass
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 5px solid #005a9c; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <h3 style="margin-top: 0; color: #005a9c; font-size: 1.3rem;">Scientific Goal & Platform Trustworthiness</h3>
         <p style="font-size: 0.95rem; line-height: 1.5; color: #333333; margin-bottom: 12px;">
@@ -963,9 +1240,13 @@ def run_app():
             </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
-    tab_single, tab_batch, tab_results = st.tabs(["Single Prediction", "Batch Prediction", "Results"])
+    tab_single, tab_batch, tab_results = st.tabs(
+        ["Single Prediction", "Batch Prediction", "Results"]
+    )
 
     with tab_single:
         _section_single_prediction()
@@ -974,6 +1255,7 @@ def run_app():
         _section_batch_prediction()
     with tab_results:
         _section_results()
+
 
 if __name__ == "__main__":
     run_app()
