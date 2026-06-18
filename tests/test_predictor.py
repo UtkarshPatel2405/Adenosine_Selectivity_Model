@@ -23,7 +23,7 @@ class TestLoadScaler:
         from src.predictor import _load_scaler
 
         with pytest.raises(FileNotFoundError):
-            _load_scaler("precise")
+            _load_scaler("dummy_non_existent_mode_123")
 
 
 class TestDescriptorsDirect:
