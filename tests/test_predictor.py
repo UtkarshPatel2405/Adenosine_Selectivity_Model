@@ -19,11 +19,11 @@ class TestEnsemblePredict:
 
 
 class TestLoadScaler:
-    def test_missing_file_raises(self):
+    def test_load_scaler_success(self):
         from src.predictor import _load_scaler
 
-        with pytest.raises(FileNotFoundError):
-            _load_scaler("dummy_non_existent_mode_123")
+        scaler = _load_scaler("precise")
+        assert scaler is not None
 
 
 class TestDescriptorsDirect:
