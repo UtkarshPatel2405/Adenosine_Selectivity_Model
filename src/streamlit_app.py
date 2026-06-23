@@ -213,18 +213,29 @@ def _single():
     # Affinity
     st.markdown(f'<div class="sd"></div><div class="ct">🎯 Affinity  <span class="tag tg">Best: {r["best_target"]}</span></div>', unsafe_allow_html=True)
     sm = st.selectbox("Model", ["XGBoost","RandomForest","PyTorch"], label_visibility="collapsed")
+    gnn_available = Path("models/gnn/gnn_a1_model.pt").exists()
     for k in SUBTYPES:
-        v = preds.get(sm,{}).get(k,0); c, l = _tag(v)
-        pct = min(float(v)/10*100,100); co = "#2ecc71" if v>=6 else "#f39c12" if v>=4.5 else "#e74c3c"
-        uv = unc.get(sm,{}).get(k,0)
+        v = preds.get(sm,{}).get(k,0)
+        if sm == "PyTorch" and not gnn_available:
+            c, l = ("tb", "N/A")
+            pct = 0
+            co = "#8899bb"
+            display_v = "—"
+            uv = 0
+        else:
+            c, l = _tag(v)
+            pct = min(float(v)/10*100,100); co = "#2ecc71" if v>=6 else "#f39c12" if v>=4.5 else "#e74c3c"
+            display_v = f"{v:.2f}"
+            uv = unc.get(sm,{}).get(k,0)
         st.markdown(
             f'<div class="card" style="padding:.35rem .7rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;font-size:.8rem">'
             f'<b>A<sub>{k[1:].lower()}</sub></b>'
-            f'<span><span class="tag {c}">{l}</span> <b style="font-size:.9rem;margin-left:.3rem">{v:.2f}</b></span></div>'
+            f'<span><span class="tag {c}">{l}</span> <b style="font-size:.9rem;margin-left:.3rem">{display_v}</b></span></div>'
             f'<div class="pb"><div class="f" style="width:{pct}%;background:{co}"></div></div>'
             f'<div style="font-size:.6rem;color:var(--t2);display:flex;justify-content:space-between">'
-            f'<span>{sm}</span><span>σ={uv:.3f}</span></div></div>', unsafe_allow_html=True)
+            f'<span>{"PyTorch (GNN)" if sm=="PyTorch" else sm}</span>'
+            f'<span>{"not trained" if sm=="PyTorch" and not gnn_available else f"σ={uv:.3f}"}</span></div></div>', unsafe_allow_html=True)
 
     # SHAP
     if r["source"] == "model":
@@ -254,25 +265,68 @@ def _single():
                 x = build_features(canon,pl).reshape(1,-1)
                 xdf = pd.DataFrame(x,columns=fn)
                 e = shap.TreeExplainer(et); sv = e(xdf)
-                fig,ax = plt.subplots(figsize=(6,2.8))
-                shap.plots.waterfall(sv[0],max_display=5,show=False)
-                plt.title(f"{r['best_target']} SHAP Waterfall",fontsize=9,fontweight="bold")
-                plt.tight_layout(); st.pyplot(fig); plt.close()
+                sv_df = pd.DataFrame({"feature": sv.feature_names, "value": sv.values[0], "base_value": sv.base_values[0]})
+                sv_df["abs"] = sv_df["value"].abs()
+                sv_df = sv_df.sort_values("abs", ascending=True).tail(10)
+                base = sv.base_values[0]
+                colors_sv = ["#e74c3c" if v > 0 else "#3498db" for v in sv_df["value"]]
+                sv_fig = go.Figure(go.Bar(
+                    x=sv_df["value"], y=sv_df["feature"], orientation="h",
+                    marker_color=colors_sv,
+                    text=[f"{v:+.3f}" for v in sv_df["value"]],
+                    textposition="outside",
+                    hovertemplate="<b>%{y}</b><br>SHAP: %{x:+.3f}<br>|SHAP|: %{customdata:.3f}<extra></extra>",
+                    customdata=sv_df["abs"]))
+                sv_fig.add_vline(x=0, line_color="rgba(255,255,255,.3)", line_width=1)
+                sv_fig.update_layout(height=300, margin=dict(t=30,b=10,l=10,r=60),
+                    xaxis_title="SHAP value (impact on model output)",
+                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#8899bb",size=10),
+                    title=dict(text=f"<b>{r['best_target']}</b>  ·  base = {base:.3f}", font=dict(size=12, color="#e8edf5")),
+                    hovermode="y unified")
+                sv_fig.update_xaxes(gridcolor="rgba(255,255,255,.05)")
+                sv_fig.update_yaxes(gridcolor="rgba(255,255,255,.05)")
+                st.plotly_chart(sv_fig, use_container_width=True)
             except Exception as ex: st.caption(f"SHAP: {ex}")
+
+    # Selectivity profile + Docking
+    sel = r.get("selectivity_profile", {})
+    dock = r.get("docking_scores")
+    if sel or dock:
+        st.markdown('<div class="sd"></div><div class="ct">📌 Selectivity & Docking</div>', unsafe_allow_html=True)
+        s_cols = st.columns(max(len(sel)+ (1 if dock else 0), 1))
+        idx = 0
+        for k, v in sel.items():
+            with s_cols[idx]:
+                st.markdown(f'<div class="card" style="text-align:center;padding:.3rem .5rem"><div class="ct" style="font-size:.65rem;justify-content:center">{k.replace("_vs_"," vs ")}</div><span style="font-size:1rem;font-weight:700">{(v):.3f}</span></div>', unsafe_allow_html=True)
+                idx += 1
+        if dock:
+            with s_cols[idx] if idx < len(s_cols) else s_cols[0]:
+                ds = dock.get("score", dock)
+                st.markdown(f'<div class="card" style="text-align:center;padding:.3rem .5rem"><div class="ct" style="font-size:.65rem;justify-content:center">Docking Score</div><span style="font-size:1rem;font-weight:700">{ds}</span></div>', unsafe_allow_html=True)
 
     # Safety row
     st.markdown('<div class="sd"></div>', unsafe_allow_html=True)
     ca, cb, cc = st.columns(3)
     with ca:
         al = check_pains(smiles)
-        st.markdown(f'<div class="card"><div class="ct">{("⚠️","✅")[not al]} Safety</div><span class="tag {("tr","tg")[not al]}">{f"{len(al)} PAINS" if al else "Clean"}</span></div>', unsafe_allow_html=True)
+        pains_desc = "PAINS (Pan-Assay INterference Compounds) are substructures that frequently show false-positive activity in assays due to reactivity or aggregation."
+        st.markdown(f'<div class="card"><div class="ct">{("⚠️","✅")[not al]} Safety</div>'
+            f'<span class="tag {("tr","tg")[not al]}">{f"{len(al)} PAINS" if al else "Clean"}</span>'
+            f'<div style="font-size:.6rem;color:var(--t2);margin-top:.2rem;line-height:1.3">{pains_desc}</div></div>', unsafe_allow_html=True)
     with cb:
         sim = nearest_tanimoto(smiles)
         if sim is not None:
             ic, il = _imp(sim)
-            st.markdown(f'<div class="card"><div class="ct">🎯 AD</div><span class="tag {ic}">{il} ({sim:.3f})</span></div>', unsafe_allow_html=True)
+            ad_desc = "Applicability Domain: Tanimoto similarity to the nearest training molecule. ≥0.6 = high confidence (inside training domain), 0.4–0.6 = medium, <0.4 = low (outside domain — predictions are extrapolations)."
+            st.markdown(f'<div class="card"><div class="ct">🎯 AD</div>'
+                f'<span class="tag {ic}">{il} ({sim:.3f})</span>'
+                f'<div style="font-size:.6rem;color:var(--t2);margin-top:.2rem;line-height:1.3">{ad_desc}</div></div>', unsafe_allow_html=True)
     with cc:
-        st.markdown(f'<div class="card"><div class="ct">💊 Drug-like</div><span class="tag tb">QED {qed:.3f}</span></div>', unsafe_allow_html=True)
+        qed_desc = "Quantitative Estimate of Drug-likeness (QED) measures how similar a compound is to known oral drugs (range 0–1). Higher values suggest better drug-like properties."
+        st.markdown(f'<div class="card"><div class="ct">💊 Drug-like</div>'
+            f'<span class="tag tb">QED {qed:.3f}</span>'
+            f'<div style="font-size:.6rem;color:var(--t2);margin-top:.2rem;line-height:1.3">{qed_desc}</div></div>', unsafe_allow_html=True)
 
     # Top-5 similar
     with st.expander("🔗 Top-5 similar training molecules"):
@@ -545,9 +599,22 @@ def _results():
             '<div class="card" style="font-size:.7rem;color:var(--t2);line-height:1.5">'
             "<b>Model Methodology.</b> "
             "The pipeline integrates three complementary modeling approaches within a conformal prediction framework. "
-            "Each approach captures different aspects of molecular structure–activity relationships."
+            "Each approach captures different aspects of molecular structure–activity relationships. "
+            "Below the diagram is a benchmark comparison against published methods from the literature."
             '</div>', unsafe_allow_html=True)
         _render_methodology_diagram()
+        lp=Path("outputs/benchmark/benchmark_comparison.json")
+        if lp.exists():
+            st.markdown('<div class="ct" style="margin-top:.5rem">📚 Literature Benchmark Comparison</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="font-size:.65rem;color:var(--t2);line-height:1.4;margin-bottom:.3rem">'
+                "Performance comparison against published models from the adenosine receptor literature. "
+                "R² values are reported on each study's test set; note that different datasets and splits "
+                "make direct comparisons approximate."
+                '</div>', unsafe_allow_html=True)
+            ld=json.loads(lp.read_text())
+            rows=[{"Model":k,"Method":v.get("method",""),"Split":v.get("split",""),**{f"{s} R²":v.get("metrics",{}).get(s,{}).get("r2") for s in SUBTYPES}} for k,v in ld.items()]
+            st.dataframe(pd.DataFrame(rows),use_container_width=True)
 
 def _render_3d(mb):
     import json as _j; e=_j.dumps(mb)
@@ -561,43 +628,49 @@ v.setStyle({{}},{{stick:{{radius:.2,colorscheme:'Jmol'}},sphere:{{radius:.4,scal
 </script></body></html>'''
 
 def _render_methodology_diagram():
-    """SVG-style methodology flowchart rendered via HTML + CSS."""
     st.markdown(f'''
     <div class="card" style="padding:.8rem 1rem">
+    <div style="font-size:.7rem;color:var(--t2);line-height:1.5;margin-bottom:.6rem">
+    <b>Pipeline Overview.</b> 33,401 pChEMBL values across 4 adenosine receptor subtypes were curated from ChEMBL and
+    public bioactivity databases. Morgan fingerprints (2048 bits, radius 2), MACCS keys (167 bits), and 15 RDKit physicochemical
+    descriptors (MW, LogP, TPSA, HBD, HBA, Rotatable Bonds, Aromatic Rings, etc.) were computed as features — 2,230 total.
+    Features with >5% missing values, near-zero variance, or pairwise correlation >0.90 were filtered out.
+    A scaffold-based split (Murcko frameworks, 80/20) ensures the test set measures generalization to novel chemotypes.
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;font-size:.7rem">
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:100px;border:1px solid rgba(0,180,216,.2)">
         <div style="font-size:1.2rem;margin-bottom:.2rem">📚</div>
         <div style="font-weight:600;font-size:.65rem">Data Curation</div>
-        <div style="color:var(--t2);font-size:.55rem">ChEMBL +文献<br/>33K bioactivities</div>
+        <div style="color:var(--t2);font-size:.55rem">ChEMBL + Literature<br/>33K pChEMBL values<br/>4 receptor subtypes</div>
       </div>
       <div style="display:flex;align-items:center;color:var(--t2);font-size:1rem">→</div>
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:100px;border:1px solid rgba(46,204,113,.2)">
         <div style="font-size:1.2rem;margin-bottom:.2rem">🧪</div>
         <div style="font-weight:600;font-size:.65rem">Featurization</div>
-        <div style="color:var(--t2);font-size:.55rem">Morgan FP (2048)<br/>MACCS (167)<br/>RDKit desc.</div>
+        <div style="color:var(--t2);font-size:.55rem">Morgan FP (2048)<br/>MACCS (167)<br/>RDKit desc. (15)<br/>2,230 total features</div>
       </div>
       <div style="display:flex;align-items:center;color:var(--t2);font-size:1rem">→</div>
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:100px;border:1px solid rgba(243,156,18,.2)">
         <div style="font-size:1.2rem;margin-bottom:.2rem">🔀</div>
         <div style="font-weight:600;font-size:.65rem">Scaffold Split</div>
-        <div style="color:var(--t2);font-size:.55rem">Murcko scaffolds<br/>80/20 train/test</div>
+        <div style="color:var(--t2);font-size:.55rem">Murcko scaffold-based<br/>80% train / 20% test<br/>Tests novel chemotypes</div>
       </div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:.5rem;font-size:.7rem">
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:90px;border:1px solid rgba(0,180,216,.3)">
         <div style="font-size:1rem;margin-bottom:.2rem">🌲</div>
         <div style="font-weight:600;font-size:.65rem">XGBoost</div>
-        <div style="color:var(--t2);font-size:.55rem">Tree ensemble<br/>CV-optimized</div>
+        <div style="color:var(--t2);font-size:.55rem">Gradient-boosted trees<br/>5-fold CV hyperopt<br/>Best of 100 trials</div>
       </div>
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:90px;border:1px solid rgba(46,204,113,.3)">
         <div style="font-size:1rem;margin-bottom:.2rem">🌳</div>
         <div style="font-weight:600;font-size:.65rem">RandomForest</div>
-        <div style="color:var(--t2);font-size:.55rem">300 trees<br/>Bagged ensemble</div>
+        <div style="color:var(--t2);font-size:.55rem">300 trees, max_depth=15<br/>Bagged ensemble<br/>sqrt feature sampling</div>
       </div>
       <div style="background:linear-gradient(135deg,#0d1b3a,#1a3a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:90px;border:1px solid rgba(243,156,18,.3)">
         <div style="font-size:1rem;margin-bottom:.2rem">🧠</div>
         <div style="font-weight:600;font-size:.65rem">GNN (MPNN)</div>
-        <div style="color:var(--t2);font-size:.55rem">Graph conv.<br/>GINE architecture</div>
+        <div style="color:var(--t2);font-size:.55rem">3-layer GINE conv<br/>256 hidden dim<br/>Mean+max pooling</div>
       </div>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:.5rem;font-size:.7rem">
@@ -605,13 +678,13 @@ def _render_methodology_diagram():
       <div style="background:linear-gradient(135deg,#2a1a3d,#4a2a6a);border-radius:8px;padding:.4rem .7rem;text-align:center;min-width:120px;border:1px solid rgba(155,89,182,.3)">
         <div style="font-size:1rem;margin-bottom:.2rem">🛡️</div>
         <div style="font-weight:600;font-size:.65rem">Conformal Prediction</div>
-        <div style="color:var(--t2);font-size:.55rem">MAPIE CV+<br/>90% prediction intervals</div>
+        <div style="color:var(--t2);font-size:.55rem">MAPIE CV+ (5-fold)<br/>90% confidence intervals<br/>Uncertainty-calibrated</div>
       </div>
       <div style="display:flex;align-items:center;color:var(--t2);font-size:1rem">↓</div>
       <div style="background:linear-gradient(135deg,#1a3d2a,#2a6a4a);border-radius:8px;padding:.6rem .9rem;text-align:center;min-width:100px;border:1px solid rgba(46,204,113,.4);box-shadow:0 0 12px rgba(46,204,113,.15)">
         <div style="font-size:1.2rem;margin-bottom:.2rem">🎯</div>
         <div style="font-weight:600;font-size:.7rem;color:#5ce69a">Prediction</div>
-        <div style="color:var(--t2);font-size:.55rem">pChEMBL ± σ<br/>A1/A2A/A2B/A3</div>
+        <div style="color:var(--t2);font-size:.55rem">pChEMBL ± prediction σ<br/>All 4 subtypes (A1,A2A,A2B,A3)<br/>Selectivity scores included</div>
       </div>
     </div>
     </div>
