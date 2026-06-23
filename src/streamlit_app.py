@@ -355,7 +355,10 @@ def _section_single_prediction():
                         estimator = model_conformal
                     
                     # Load scaler
-                    with open("models/scaler.pkl", "rb") as f_scaler:
+                    scaler_path = Path("models/precise/scaler_precise.pkl")
+                    if not scaler_path.exists():
+                        scaler_path = Path("models/scaler.pkl")
+                    with open(scaler_path, "rb") as f_scaler:
                         pipeline = pickle.load(f_scaler)
                     
                     # Reconstruct feature names

@@ -77,10 +77,10 @@ def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, fl
     """
     Returns (pred_mean, uncertainty_std_equiv, lower_bound, upper_bound).
 
-    Now properly handles CrossConformalRegressor (MAPIE) — the primary model type
-    produced by retrain_production.py after the conformal-wrapping fix.
+    Production models are raw XGBRegressor (no MAPIE wrapper in pickle).
 
-    Falls back gracefully for legacy models (list ensembles, raw sklearn, etc.).
+    Falls back gracefully for legacy models (CrossConformalRegressor, MapieRegressor,
+    list ensembles, raw sklearn, etc.).
     """
     if x.ndim == 1:
         x = x.reshape(1, -1)
@@ -89,8 +89,6 @@ def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, fl
 
     if model_type_name == "CrossConformalRegressor":
         try:
-            # MAPIE >= 0.8 (confirmed on 1.4.1) does not accept alpha/confidence_level
-            # in predict_interval(); confidence level is set at construction time.
             y_pred, y_pis = model_ens.predict_interval(x)
             if y_pis.ndim == 3:
                 lower = float(y_pis[0, 0, 0])
