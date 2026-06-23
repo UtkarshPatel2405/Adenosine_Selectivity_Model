@@ -143,7 +143,6 @@ def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
         scaler = None
 
     xgb_models = _load_xgb_models()
-    rf_models = _load_rf_models()
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -194,8 +193,10 @@ def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
             else:
                 preds["XGBoost"][st], unc["XGBoost"][st], intervals["XGBoost"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
-            if st in rf_models and x is not None:
-                m, s, low, high = _ensemble_predict(rf_models[st], x)
+            # Lazy-load RF on demand (avoids 105MB deserialization on cold start)
+            _rf = _load_rf_models()
+            if st in _rf and x is not None:
+                m, s, low, high = _ensemble_predict(_rf[st], x)
                 preds["RandomForest"][st] = m
                 unc["RandomForest"][st] = s
                 intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}

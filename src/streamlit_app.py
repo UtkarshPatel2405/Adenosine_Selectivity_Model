@@ -30,6 +30,15 @@ from src.app.components.model_reports import (
     outputs_exist,
 )
 
+@st.cache_data(show_spinner=False)
+def _cached_predict(smiles: str, threshold: float) -> dict:
+    return predict(smiles, threshold)
+
+@st.cache_resource(show_spinner=False)
+def _load_shap_model(model_path: Path):
+    with open(model_path, "rb") as f:
+        return pickle.load(f)
+
 def explain_feature_chemically(name: str, val: float, smiles: str) -> dict:
     from rdkit import Chem
     from rdkit.Chem import AllChem
@@ -239,9 +248,9 @@ def _section_single_prediction():
                 else:
                     st.warning("Could not generate 3D conformer.")
 
-            # 2. Run Prediction Pipeline
+            # 2. Run Prediction Pipeline (cached: same SMILES -> cache hit)
             try:
-                r = predict(smiles, threshold=threshold)
+                r = _cached_predict(smiles, threshold=threshold)
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
                 return
@@ -333,8 +342,7 @@ def _section_single_prediction():
                     if not model_path.exists():
                         model_path = Path(f"models/xgboost_{r['best_target'].lower()}_model.pkl")
                     
-                    with open(model_path, "rb") as f_model:
-                        model_conformal = pickle.load(f_model)
+                    model_conformal = _load_shap_model(model_path)
                     
                     # Extract base estimator
                     if type(model_conformal).__name__ == "CrossConformalRegressor":
