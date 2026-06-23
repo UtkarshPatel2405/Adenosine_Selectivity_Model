@@ -326,8 +326,10 @@ def _section_single_prediction():
                 try:
                     from src.features import build_features
                     
-                    # Load conformal model
-                    model_path = Path(f"models/precise/xgboost_precise_{r['best_target'].lower()}_model.pkl")
+                    # Load conformal model (production MAPIE-wrapped)
+                    model_path = Path(f"models/precise/xgboost_{r['best_target']}_production.pkl")
+                    if not model_path.exists():
+                        model_path = Path(f"models/precise/xgboost_precise_{r['best_target'].lower()}_model.pkl")
                     if not model_path.exists():
                         model_path = Path(f"models/xgboost_{r['best_target'].lower()}_model.pkl")
                     
