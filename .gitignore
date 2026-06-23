@@ -39,19 +39,10 @@ Thumbs.db
 *.pt
 *.pth
 
-# Data and model artifacts
-data/processed/
+# Data and model artifacts (keep DVC-tracked, not git)
 data/raw/*.csv
 data/raw/*.xlsx
 models/
-outputs/validoutput/
-outputs/nested_cv/
-outputs/shap/
-outputs/y_randomization/
-outputs/gnn/
-outputs/benchmark/
-outputs/external_validation/
-outputs/diagnostics/
 
 # Logs
 *.log
