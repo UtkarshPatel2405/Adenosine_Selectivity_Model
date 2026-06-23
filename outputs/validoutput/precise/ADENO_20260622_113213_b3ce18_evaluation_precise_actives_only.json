@@ -1,0 +1,233 @@
+{
+  "data_path": "data/raw",
+  "include_decoys": false,
+  "mode": "precise",
+  "n_test": 3620,
+  "n_train": 14832,
+  "overall": {
+    "baseline_mae": 0.9843722610363139,
+    "baseline_r2": -0.0004041611652776389,
+    "baseline_rmse": 1.2054192844560492,
+    "calibration_quartiles": [
+      {
+        "bin": 1,
+        "mae_mean": 0.658246554380859,
+        "n": 905,
+        "std_mean": 0.0
+      },
+      {
+        "bin": 2,
+        "mae_mean": 0.5635744716705665,
+        "n": 905,
+        "std_mean": 0.0
+      },
+      {
+        "bin": 3,
+        "mae_mean": 0.5417773650982891,
+        "n": 905,
+        "std_mean": 0.0
+      },
+      {
+        "bin": 4,
+        "mae_mean": 0.5937099868816565,
+        "n": 905,
+        "std_mean": 0.0
+      }
+    ],
+    "conformal_coverage_90": 0.0,
+    "model_mae": 0.5893270945078427,
+    "model_r2": 0.5836548345582282,
+    "model_rmse": 0.7776374247191853
+  },
+  "per_subtype": {
+    "A1": {
+      "baseline_mae": 0.9015891167340443,
+      "baseline_r2": -0.0013707368468793835,
+      "baseline_rmse": 1.139292448343776,
+      "calibration_quartiles": [
+        {
+          "bin": 1,
+          "mae_mean": 0.819480834586677,
+          "n": 225,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 2,
+          "mae_mean": 0.6172033361021766,
+          "n": 224,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 3,
+          "mae_mean": 0.6282330327030005,
+          "n": 224,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 4,
+          "mae_mean": 0.5741704366623896,
+          "n": 224,
+          "std_mean": 0.0
+        }
+      ],
+      "conformal_coverage_90": 0.0,
+      "delta_mae": -0.2416391588670016,
+      "gnn_mae": 0.6945235157757167,
+      "gnn_r2": 0.38761883528085705,
+      "gnn_rmse": 0.8909404742406951,
+      "model_mae": 0.6599499578670427,
+      "model_r2": 0.39656694418887894,
+      "model_rmse": 0.8844073013355488,
+      "model_type": "CrossConformalRegressor",
+      "n_test": 897,
+      "n_train": 3861,
+      "rf_mae": 0.7235800892420962,
+      "rf_r2": 0.32824968237481955,
+      "rf_rmse": 0.9331290522060912,
+      "uncertainty_mean_std": 0.0
+    },
+    "A2A": {
+      "baseline_mae": 1.040294137837764,
+      "baseline_r2": -0.00035183781520720103,
+      "baseline_rmse": 1.2658645829267248,
+      "calibration_quartiles": [
+        {
+          "bin": 1,
+          "mae_mean": 0.6259678301354552,
+          "n": 290,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 2,
+          "mae_mean": 0.5489032348092437,
+          "n": 290,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 3,
+          "mae_mean": 0.5176285612553897,
+          "n": 290,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 4,
+          "mae_mean": 0.5110864657712603,
+          "n": 289,
+          "std_mean": 0.0
+        }
+      ],
+      "conformal_coverage_90": 0.0,
+      "delta_mae": -0.48936326621919624,
+      "gnn_mae": 0.9174584865158647,
+      "gnn_r2": 0.18687096151035687,
+      "gnn_rmse": 1.141275782988023,
+      "model_mae": 0.5509308716185677,
+      "model_r2": 0.6799234368074456,
+      "model_rmse": 0.7160408501303777,
+      "model_type": "CrossConformalRegressor",
+      "n_test": 1159,
+      "n_train": 5040,
+      "rf_mae": 0.6757143434501386,
+      "rf_r2": 0.5392593559638427,
+      "rf_rmse": 0.8590909112575317,
+      "uncertainty_mean_std": 0.0
+    },
+    "A2B": {
+      "baseline_mae": 0.7842023158923196,
+      "baseline_r2": -0.00034595575884699414,
+      "baseline_rmse": 0.9799635870999835,
+      "calibration_quartiles": [
+        {
+          "bin": 1,
+          "mae_mean": 0.4455818806342887,
+          "n": 131,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 2,
+          "mae_mean": 0.5329640796316774,
+          "n": 131,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 3,
+          "mae_mean": 0.5966885252090358,
+          "n": 131,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 4,
+          "mae_mean": 0.5578733600591084,
+          "n": 131,
+          "std_mean": 0.0
+        }
+      ],
+      "conformal_coverage_90": 0.0,
+      "delta_mae": -0.25092535450879194,
+      "gnn_mae": 0.6480962488487476,
+      "gnn_r2": 0.3173157544615871,
+      "gnn_rmse": 0.8095520408939922,
+      "model_mae": 0.5332769613835276,
+      "model_r2": 0.5268348112332668,
+      "model_rmse": 0.6739710176079408,
+      "model_type": "CrossConformalRegressor",
+      "n_test": 524,
+      "n_train": 1922,
+      "rf_mae": 0.5861197632734582,
+      "rf_r2": 0.44251272204095005,
+      "rf_rmse": 0.731563971500945,
+      "uncertainty_mean_std": 0.0
+    },
+    "A3": {
+      "baseline_mae": 1.0425032798798857,
+      "baseline_r2": -7.772975537445603e-06,
+      "baseline_rmse": 1.2552969354839583,
+      "calibration_quartiles": [
+        {
+          "bin": 1,
+          "mae_mean": 0.6296448823488675,
+          "n": 260,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 2,
+          "mae_mean": 0.6005776870434101,
+          "n": 260,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 3,
+          "mae_mean": 0.5511816958647507,
+          "n": 260,
+          "std_mean": 0.0
+        },
+        {
+          "bin": 4,
+          "mae_mean": 0.6163763575920692,
+          "n": 260,
+          "std_mean": 0.0
+        }
+      ],
+      "conformal_coverage_90": 0.0,
+      "delta_mae": -0.44305812416761126,
+      "gnn_mae": 0.6592268742047823,
+      "gnn_r2": 0.5557300268270771,
+      "gnn_rmse": 0.8366971025455425,
+      "model_mae": 0.5994451557122744,
+      "model_r2": 0.6001815329568327,
+      "model_rmse": 0.7937362327162025,
+      "model_type": "CrossConformalRegressor",
+      "n_test": 1040,
+      "n_train": 4009,
+      "rf_mae": 0.6765237110191921,
+      "rf_r2": 0.5243205298701559,
+      "rf_rmse": 0.8657689073007032,
+      "uncertainty_mean_std": 0.0
+    }
+  },
+  "run_id": "ADENO_20260622_113213_b3ce18",
+  "split": {
+    "random_state": 42,
+    "test_size": 0.2
+  }
+}

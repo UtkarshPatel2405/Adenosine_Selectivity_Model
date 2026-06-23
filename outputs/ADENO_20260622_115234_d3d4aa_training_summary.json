@@ -1,0 +1,31 @@
+{
+  "A1": {
+    "conformal_wrapped": "CrossConformalRegressor",
+    "rf_r2": 0.7206629846157564,
+    "test_size": 1220,
+    "train_size": 5145,
+    "xgboost_r2": 0.79043066935756
+  },
+  "A2A": {
+    "conformal_wrapped": "CrossConformalRegressor",
+    "rf_r2": 0.7998407358905896,
+    "test_size": 1488,
+    "train_size": 6318,
+    "xgboost_r2": 0.8566428854232162
+  },
+  "A2B": {
+    "conformal_wrapped": "CrossConformalRegressor",
+    "rf_r2": 0.8707540813484842,
+    "test_size": 849,
+    "train_size": 3204,
+    "xgboost_r2": 0.8814195389145658
+  },
+  "A3": {
+    "conformal_wrapped": "CrossConformalRegressor",
+    "rf_r2": 0.7964762337470692,
+    "test_size": 1341,
+    "train_size": 5315,
+    "xgboost_r2": 0.8296161023049548
+  },
+  "run_id": "ADENO_20260622_115234_d3d4aa"
+}
