@@ -38,10 +38,17 @@ def _find_file(base: str, pattern: str) -> Path:
 
 def _load_json(path: str) -> dict:
     """Safely load JSON, returning empty dict if file is missing."""
-    if not Path(path).exists():
+    p = Path(path)
+    if not p.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with open(p, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "actual_file" in data:
+        actual_path = p.parent / data["actual_file"]
+        if actual_path.exists():
+            with open(actual_path, "r", encoding="utf-8") as f_act:
+                return json.load(f_act)
+    return data
 
 def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[pd.DataFrame, pd.DataFrame]:
     infix = _get_mode_infix(base)
