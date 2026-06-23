@@ -781,8 +781,10 @@ def _section_results():
         eval_path = Path("outputs/validoutput/precise/evaluation_precise_report.json")
         if eval_path.exists():
             try:
-                with open(eval_path, "r") as f:
-                    eval_data = json.load(f)
+                from src.app.components.model_reports import _load_json
+                eval_data = _load_json(str(eval_path))
+                if not eval_data:
+                    eval_data = {}
                 gnn_rows = []
                 for st_name in SUBTYPES:
                     st_data = eval_data.get("per_subtype", {}).get(st_name, {})
