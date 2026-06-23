@@ -1,0 +1,6 @@
+# Data tracked by DVC
+*.pkl
+*.csv
+*.json
+*.parquet
+*.xlsx

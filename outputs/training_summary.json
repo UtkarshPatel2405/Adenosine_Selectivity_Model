@@ -1,26 +1,6 @@
 {
-  "A1": {
-    "train_size": 5223,
-    "test_size": 1142,
-    "xgboost_r2": 0.6768781504065289,
-    "rf_r2": 0.6066606886780213
-  },
-  "A2A": {
-    "train_size": 6261,
-    "test_size": 1545,
-    "xgboost_r2": 0.7481141017058726,
-    "rf_r2": 0.6749443036058254
-  },
-  "A2B": {
-    "train_size": 3296,
-    "test_size": 757,
-    "xgboost_r2": 0.8487812512799664,
-    "rf_r2": 0.8381340740281942
-  },
-  "A3": {
-    "train_size": 5574,
-    "test_size": 1082,
-    "xgboost_r2": 0.7954528011359626,
-    "rf_r2": 0.7204204103987801
-  }
+  "run_id": "ADENO_20260622_120921_5d7da2",
+  "actual_file": "ADENO_20260622_120921_5d7da2_training_summary.json",
+  "full_path": "C:\\Users\\utkar\\Documents\\GitHub\\Adenosine_Selectivity_Model\\outputs\\ADENO_20260622_120921_5d7da2_training_summary.json",
+  "generated_at": "2026-06-22 12:14:29"
 }

@@ -1,0 +1,5 @@
+# Output reports are tracked by DVC
+*.json
+*.csv
+*.png
+*.md

@@ -1,13 +1,17 @@
+import logging
 import pickle
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
 import numpy as np
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Descriptors, Lipinski, MACCSkeys
 from sklearn.preprocessing import StandardScaler
 from rdkit.Chem import rdFingerprintGenerator
+
+from src.config import FEATURE_NAN_THRESHOLD, FEATURE_VAR_THRESHOLD, FEATURE_CORR_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 
 class FeatureFilter:
@@ -197,11 +201,11 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
     test_smiles = test_df[smiles_col].tolist()
     from joblib import Parallel, delayed
 
-    print("[INFO] Computing Morgan fingerprints...")
+    logger.info("Computing Morgan fingerprints (%d train, %d test)...", len(train_smiles), len(test_smiles))
     Xfp_train = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in train_smiles))
     Xfp_test = np.vstack(Parallel(n_jobs=-1)(delayed(_morgan_bits)(s) for s in test_smiles))
 
-    print("[INFO] Computing MACCS keys...")
+    logger.info("Computing MACCS keys...")
     Xmaccs_train = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in train_smiles))
     Xmaccs_test = np.vstack(Parallel(n_jobs=-1)(delayed(_maccs_bits)(s) for s in test_smiles))
 
@@ -221,19 +225,24 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
         with open("data/processed/train_fps.pkl", "wb") as f:
             pickle.dump(train_fps, f)
 
-    print(f"[INFO] Computing curated RDKit descriptors ({len(CURATED_DESCRIPTORS_LIST)})...")
+    logger.info("Computing curated RDKit descriptors (%d)...", len(CURATED_DESCRIPTORS_LIST))
     Xdesc_train = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in train_smiles))
     Xdesc_test = np.vstack(Parallel(n_jobs=-1)(delayed(_all_descriptors)(s) for s in test_smiles))
 
-    print("[INFO] Filtering descriptors (NaN, Variance, Correlation)...")
+    logger.info("Filtering descriptors (NaN=%.2f, Var=%.2f, Corr=%.2f)...",
+                 FEATURE_NAN_THRESHOLD, FEATURE_VAR_THRESHOLD, FEATURE_CORR_THRESHOLD)
     desc_names = _all_descriptors_names()
-    feature_filter = FeatureFilter()
+    feature_filter = FeatureFilter(
+        nan_threshold=FEATURE_NAN_THRESHOLD,
+        var_threshold=FEATURE_VAR_THRESHOLD,
+        corr_threshold=FEATURE_CORR_THRESHOLD,
+    )
     feature_filter.fit(Xdesc_train, feature_names=desc_names)
 
     Xdesc_train_filtered = feature_filter.transform(Xdesc_train)
     Xdesc_test_filtered = feature_filter.transform(Xdesc_test)
 
-    print(f"[INFO] Started with {Xdesc_train.shape[1]} descriptors -> kept {Xdesc_train_filtered.shape[1]} after filtering.")
+    logger.info("Started with %d descriptors -> kept %d after filtering.", Xdesc_train.shape[1], Xdesc_train_filtered.shape[1])
 
     scaler = StandardScaler()
     Xdesc_train_s = scaler.fit_transform(Xdesc_train_filtered)

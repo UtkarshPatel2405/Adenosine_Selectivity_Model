@@ -1,11 +1,57 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swo
+*.swp
 
 # Local caches / artifacts
 cache/
 reports/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
-# Env
-.venv/
+# Environment
 .env
+
+# DVC cache (tracked separately)
+.dvc/cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large binary data (tracked by DVC)
+*.parquet
+*.joblib
+*.pkl
+*.pt
+*.pth
+
+# Data and model artifacts
+data/processed/
+data/raw/*.csv
+data/raw/*.xlsx
+models/
+outputs/validoutput/
+outputs/nested_cv/
+outputs/shap/
+outputs/y_randomization/
+outputs/gnn/
+outputs/benchmark/
+outputs/external_validation/
+outputs/diagnostics/
+
+# Logs
+*.log

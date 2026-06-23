@@ -4,60 +4,62 @@
   "top_features": [
     {
       "rank": 1,
-      "feature": "Morgan_FP_358",
-      "mean_abs_shap": 0.1279166340827942
+      "feature": "MaxPartialCharge",
+      "mean_abs_shap": 0.3272800147533417
     },
     {
       "rank": 2,
-      "feature": "MaxPartialCharge",
-      "mean_abs_shap": 0.10305841267108917
+      "feature": "Kappa3",
+      "mean_abs_shap": 0.1283816546201706
     },
     {
       "rank": 3,
-      "feature": "MolWt",
-      "mean_abs_shap": 0.08980656415224075
+      "feature": "NumAromaticHeterocycles",
+      "mean_abs_shap": 0.10837789624929428
     },
     {
       "rank": 4,
-      "feature": "Morgan_FP_860",
-      "mean_abs_shap": 0.07780712842941284
+      "feature": "Morgan_FP_1724",
+      "mean_abs_shap": 0.07288087904453278
     },
     {
       "rank": 5,
-      "feature": "MACCS_38",
-      "mean_abs_shap": 0.06612598150968552
+      "feature": "MACCS_86",
+      "mean_abs_shap": 0.07049331814050674
     },
     {
       "rank": 6,
-      "feature": "MACCS_86",
-      "mean_abs_shap": 0.0603056401014328
+      "feature": "MolLogP",
+      "mean_abs_shap": 0.05814700946211815
     },
     {
       "rank": 7,
-      "feature": "Morgan_FP_1805",
-      "mean_abs_shap": 0.057267770171165466
+      "feature": "Morgan_FP_1224",
+      "mean_abs_shap": 0.04920753836631775
     },
     {
       "rank": 8,
-      "feature": "FractionCSP3",
-      "mean_abs_shap": 0.05715540051460266
+      "feature": "MolWt",
+      "mean_abs_shap": 0.04364689812064171
     },
     {
       "rank": 9,
-      "feature": "Kappa3",
-      "mean_abs_shap": 0.051103346049785614
+      "feature": "Morgan_FP_504",
+      "mean_abs_shap": 0.04005066305398941
     },
     {
       "rank": 10,
-      "feature": "MACCS_157",
-      "mean_abs_shap": 0.04488266259431839
+      "feature": "MACCS_43",
+      "mean_abs_shap": 0.03978952392935753
     }
   ],
   "sanity_check": {
     "status": "PASS",
     "message": "Top features are dominated by structurally relevant physicochemical properties.",
     "expected_features_found": [
-      "MolWt"
+      "LogP",
+      "MolWt",
+      "MolLogP"
     ]
   }
 }

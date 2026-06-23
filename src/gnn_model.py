@@ -6,6 +6,7 @@ Provides a deep learning baseline for comparison with XGBoost.
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -24,14 +25,19 @@ try:
     HAS_PYG = True
 except ImportError:
     HAS_PYG = False
-    print("[WARNING] torch-geometric not installed. GNN model will not be available.")
 
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from sklearn.metrics import r2_score, mean_absolute_error
+from src.config import SUBTYPES
+
+logger = logging.getLogger(__name__)
+
+if not HAS_PYG:
+    logger.warning("torch-geometric not installed. GNN model will not be available.")
 
 
-SUBTYPES = ["A1", "A2A", "A2B", "A3"]
+# SUBTYPES imported from src.config
 
 # ── Atom & Bond Featurization ──────────────────────────────────
 
@@ -250,7 +256,7 @@ def _prepare_data(subtype: str, data_path: str = "data/raw"):
     train_graphs = df_to_graphs(train_df)
     test_graphs = df_to_graphs(test_df)
     
-    print(f"  [GNN] {subtype}: Train={len(train_graphs)}, Test={len(test_graphs)} molecular graphs")
+    logger.info("[GNN] %s: Train=%d, Test=%d molecular graphs", subtype, len(train_graphs), len(test_graphs))
     
     return train_graphs, test_graphs
 
@@ -259,15 +265,15 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
                     patience: int = 15, data_path: str = "data/raw"):
     """Train a GNN model for a specific receptor subtype."""
     if not HAS_PYG:
-        print("[ERROR] torch-geometric not installed. Cannot train GNN model.")
+        logger.error("torch-geometric not installed. Cannot train GNN model.")
         return None
-    
-    print(f"\n{'='*60}")
-    print(f"GNN TRAINING FOR {subtype} (MPNN/GINE, epochs={epochs})")
-    print(f"{'='*60}")
-    
+
+    logger.info("=" * 60)
+    logger.info("GNN TRAINING FOR %s (MPNN/GINE, epochs=%d)", subtype, epochs)
+    logger.info("=" * 60)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"  Device: {device}")
+    logger.info("  Device: %s", device)
     
     # Prepare data
     train_graphs, test_graphs = _prepare_data(subtype, data_path)
@@ -322,9 +328,9 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
         
         if epoch % 10 == 0 or epoch == 1:
             current_lr = optimizer.param_groups[0]["lr"]
-            print(f"  Epoch {epoch:3d}/{epochs} | Train Loss: {train_loss:.4f} | Val MAE: {val_mae:.4f} | Val R²: {val_r2:.4f} | LR: {current_lr:.1e}")
-        
-        # Early stopping
+            logger.info("  Epoch %3d/%d | Train Loss: %.4f | Val MAE: %.4f | Val R²: %.4f | LR: %.1e",
+                         epoch, epochs, train_loss, val_mae, val_r2, current_lr)
+
         if val_mae < best_val_mae:
             best_val_mae = val_mae
             best_epoch = epoch
@@ -344,9 +350,10 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
-                print(f"  [EARLY STOP] No improvement for {patience} epochs. Best epoch: {best_epoch} (MAE: {best_val_mae:.4f})")
+                logger.info("  [EARLY STOP] No improvement for %d epochs. Best epoch: %d (MAE: %.4f)",
+                             patience, best_epoch, best_val_mae)
                 break
-    
+
     # Final evaluation with best model
     checkpoint = torch.load(Path("models/gnn") / f"gnn_{subtype.lower()}_model.pt", weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -364,12 +371,10 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
     final_mae = float(mean_absolute_error(all_true, all_preds))
     final_r2 = float(r2_score(all_true, all_preds))
     final_rmse = float(np.sqrt(np.mean((np.array(all_true) - np.array(all_preds))**2)))
-    
-    print(f"\n  [FINAL] {subtype} GNN Performance:")
-    print(f"    R² = {final_r2:.4f}")
-    print(f"    MAE = {final_mae:.4f}")
-    print(f"    RMSE = {final_rmse:.4f}")
-    print(f"    Best Epoch = {best_epoch}")
+
+    logger.info("[FINAL] %s GNN Performance: R²=%.4f, MAE=%.4f, RMSE=%.4f",
+                 subtype, final_r2, final_mae, final_rmse)
+    logger.info("    Best Epoch = %d", best_epoch)
     
     result = {
         "subtype": subtype,
@@ -393,20 +398,19 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
 
 def train_all_subtypes(epochs: int = 100):
     """Train GNN models for ALL 4 receptor subtypes."""
-    print("\n" + "="*60)
-    print("GNN TRAINING FOR ALL SUBTYPES")
-    print("="*60)
-    
+    logger.info("=" * 60)
+    logger.info("GNN TRAINING FOR ALL SUBTYPES")
+    logger.info("=" * 60)
+
     all_results = {}
     for st in SUBTYPES:
         result = train_gnn_model(subtype=st, epochs=epochs)
         if result is not None:
             all_results[st] = result
-    
-    # Save combined summary
+
     report_dir = Path("outputs/gnn")
     report_dir.mkdir(parents=True, exist_ok=True)
-    
+
     summary = {
         "model": "MPNN/GINE (PyTorch Geometric)",
         "n_subtypes": len(all_results),
@@ -414,8 +418,8 @@ def train_all_subtypes(epochs: int = 100):
     }
     with open(report_dir / "all_subtypes_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"\n[SUCCESS] All GNN results saved to {report_dir / 'all_subtypes_summary.json'}")
-    
+    logger.info("All GNN results saved to %s", report_dir / "all_subtypes_summary.json")
+
     return all_results
 
 

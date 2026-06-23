@@ -27,7 +27,9 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     print("="*60)
     
     # 1. Load trained model
-    model_path = Path(f"models/{mode}/xgboost_{mode}_{subtype.lower()}_model.pkl")
+    model_path = Path(f"models/{mode}/xgboost_{subtype}_production.pkl")
+    if not model_path.exists():
+        model_path = Path(f"models/{mode}/xgboost_{mode}_{subtype.lower()}_model.pkl")
     if not model_path.exists():
         model_path = Path(f"models/xgboost_{subtype.lower()}_model.pkl")
     if not model_path.exists():
@@ -35,11 +37,13 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     if not model_path.exists():
         print(f"[ERROR] No model found for {subtype}. Complete production retraining first.")
         return None
-        
+
+    print(f"[INFO] Loading model from {model_path}")
     with open(model_path, "rb") as f:
         model = pickle.load(f)
-        
+
     # Extract fitted base estimator for SHAP TreeExplainer
+    # MAPIE 1.4.1 CrossConformalRegressor stores CV estimators in _mapie_regressor
     if type(model).__name__ == "CrossConformalRegressor":
         estimator = model._mapie_regressor.estimator_.estimators_[0]
     elif type(model).__name__ == "MapieRegressor":

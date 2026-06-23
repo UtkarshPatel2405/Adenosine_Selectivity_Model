@@ -14,7 +14,7 @@ from src.predictor import _load_scaler
 
 SUBTYPES = ["A1", "A2A", "A2B", "A3"]
 
-def build_selectivity_models(data_path: str = "data/raw/AR_all_unique_parents_with_smiles.csv", min_paired: int = 50):
+def build_selectivity_models(data_path: str = "data/raw", min_paired: int = 50):
     print("\n" + "="*60)
     print("TRAINING DIRECT SELECTIVITY MODELS (Delta-pChEMBL)")
     print("="*60)

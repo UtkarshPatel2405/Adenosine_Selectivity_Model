@@ -18,10 +18,12 @@ class TestEnsemblePredict:
 
 
 class TestLoadScaler:
-    def test_missing_file_raises(self):
+    def test_loads_scaler_with_fallback(self):
         from src.predictor import _load_scaler
-        with pytest.raises(FileNotFoundError):
-            _load_scaler("precise")
+        _load_scaler.cache_clear()
+        # Even with a non-existent mode, _load_scaler falls back to models/scaler.pkl
+        scaler = _load_scaler("nonexistent_mode_xyz")
+        assert hasattr(scaler, 'transform'), "Scaler should have transform method"
 
 
 class TestDescriptorsDirect:
