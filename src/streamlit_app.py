@@ -28,8 +28,8 @@ for k in ("history","history_df","pred"):
 
 # ── Caching ──
 @st.cache_data(show_spinner=False)
-def _cached_predict(smiles: str, threshold: float) -> dict:
-    return predict(smiles, threshold)
+def _cached_predict(smiles: str, threshold: float, run_rf: bool = False) -> dict:
+    return predict(smiles, threshold, run_rf=run_rf)
 
 @st.cache_resource(show_spinner=False)
 def _load_shap_model(model_path: Path):
@@ -136,11 +136,11 @@ def _single():
         if eg and eg != "Custom": smiles = EXAMPLES[eg]
 
     if st.button("🔬 Predict", use_container_width=True):
-        with st.spinner("Running 3 models + conformal intervals…"):
+        with st.spinner("Running models + conformal intervals…"):
             t0 = time.time()
             mb, mn, mx = generate_3d_conformer(smiles)
             sv = draw_2d_svg(smiles)
-            try: r = _cached_predict(smiles, 6.0)
+            try: r = _cached_predict(smiles, 6.0, run_rf=False)
             except Exception as e: st.error(f"Error: {e}"); return
             el = time.time() - t0
             r["_elapsed"] = el; r["_mol_block"] = mb; r["_svg"] = sv; r["_smiles"] = smiles
@@ -213,6 +213,17 @@ def _single():
     # Affinity
     st.markdown(f'<div class="sd"></div><div class="ct">🎯 Affinity  <span class="tag tg">Best: {r["best_target"]}</span></div>', unsafe_allow_html=True)
     sm = st.selectbox("Model", ["XGBoost","RandomForest","PyTorch"], label_visibility="collapsed")
+    if sm == "RandomForest" and r["source"] == "model" and not any(preds.get("RandomForest", {}).values()):
+        with st.spinner("Running RandomForest models (loading 100MB ensemble)..."):
+            try:
+                r_rf = _cached_predict(r["_smiles"], 6.0, run_rf=True)
+                r["predictions"]["RandomForest"] = r_rf["predictions"]["RandomForest"]
+                r["uncertainty"]["RandomForest"] = r_rf["uncertainty"]["RandomForest"]
+                r["intervals"]["RandomForest"] = r_rf["intervals"]["RandomForest"]
+                st.session_state.pred = r
+                st.rerun()
+            except Exception as e:
+                st.error(f"RandomForest Error: {e}")
     gnn_available = Path("models/gnn/gnn_a1_model.pt").exists()
     for k in SUBTYPES:
         v = preds.get(sm,{}).get(k,0)

@@ -29,11 +29,16 @@ def _load_scaler(mode: str = "precise"):
         MODELS_DIR / mode / f"scaler_{mode}.pkl",
         MODELS_DIR / "scaler.pkl",
     ]
+    last_err = None
     for path in candidate_paths:
         if path.exists():
-            with open(path, "rb") as f:
-                return pickle.load(f)
-    raise FileNotFoundError(f"No scaler found for mode={mode} in any path.")
+            try:
+                with open(path, "rb") as f:
+                    return pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load scaler from %s: %s", path, e)
+                last_err = e
+    raise FileNotFoundError(f"No scaler found for mode={mode} in any path. Last error: {last_err}")
 
 
 @lru_cache(maxsize=1)
@@ -53,8 +58,11 @@ def _load_xgb_models():
         if not path.exists():
             path = MODELS_DIR / f"xgboost_{st}_production.pkl"
         if path.exists():
-            with open(path, "rb") as f:
-                models[st] = pickle.load(f)
+            try:
+                with open(path, "rb") as f:
+                    models[st] = pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load XGBoost model for %s from %s: %s", st, path, e)
         else:
             logger.warning("XGBoost model for %s not found at %s", st, path)
     return models
@@ -68,8 +76,13 @@ def _load_rf_models():
         if not path.exists():
             path = MODELS_DIR / f"rf_{st}_production.pkl"
         if path.exists():
-            with open(path, "rb") as f:
-                models[st] = pickle.load(f)
+            try:
+                with open(path, "rb") as f:
+                    models[st] = pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load RandomForest model for %s from %s: %s", st, path, e)
+        else:
+            logger.warning("RandomForest model for %s not found at %s", st, path)
     return models
 
 
@@ -132,7 +145,7 @@ def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, fl
         return pred, 0.0, pred, pred
 
 
-def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
+def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[str, Any]:
     lookup = _load_db_lookup()
 
     try:
@@ -192,12 +205,15 @@ def predict(smiles: str, threshold: float = 6.0) -> Dict[str, Any]:
                 preds["XGBoost"][st], unc["XGBoost"][st], intervals["XGBoost"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
             # Lazy-load RF on demand (avoids 105MB deserialization on cold start)
-            _rf = _load_rf_models()
-            if st in _rf and x is not None:
-                m, s, low, high = _ensemble_predict(_rf[st], x)
-                preds["RandomForest"][st] = m
-                unc["RandomForest"][st] = s
-                intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+            if run_rf:
+                _rf = _load_rf_models()
+                if st in _rf and x is not None:
+                    m, s, low, high = _ensemble_predict(_rf[st], x)
+                    preds["RandomForest"][st] = m
+                    unc["RandomForest"][st] = s
+                    intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+                else:
+                    preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
             else:
                 preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 

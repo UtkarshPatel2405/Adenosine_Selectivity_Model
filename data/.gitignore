@@ -4,3 +4,4 @@
 *.json
 *.parquet
 *.xlsx
+!processed/db_lookup_train.json
