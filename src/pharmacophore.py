@@ -39,6 +39,17 @@ class AdenosinePharmacophoreAnalyzer:
     }
     
     @classmethod
+    def _get_pattern(cls, smarts: str) -> Chem.Mol | None:
+        """Helper to parse a pattern, falling back to MolFromSmiles if MolFromSmarts fails."""
+        pat = Chem.MolFromSmarts(smarts)
+        if pat is None:
+            pat = Chem.MolFromSmiles(smarts)
+        if pat is None:
+            import logging
+            logging.warning("Invalid SMARTS/SMILES pattern in pharmacophore rules: %s", smarts)
+        return pat
+
+    @classmethod
     def analyze_molecule(cls, smiles: str) -> Dict[str, Any]:
         """
         Analyzes a compound SMILES for pharmacophore matching across all AR subtypes.
@@ -62,7 +73,7 @@ class AdenosinePharmacophoreAnalyzer:
         pi_stacking = False
         for name, smarts in cls.CORE_FEATURES.items():
             if "Core" in name or "Bicyclic" in name:
-                pat = Chem.MolFromSmarts(smarts)
+                pat = cls._get_pattern(smarts)
                 if pat and mol.HasSubstructMatch(pat):
                     pi_stacking = True
                     results["core_features"]["Pi-Stacking Core"] = {
@@ -73,7 +84,7 @@ class AdenosinePharmacophoreAnalyzer:
         
         if not pi_stacking:
             # Fallback check for any aromatic ring
-            any_aromatic = Chem.MolFromSmarts("a1aaaaa1")
+            any_aromatic = cls._get_pattern("a1aaaaa1")
             if any_aromatic and mol.HasSubstructMatch(any_aromatic):
                 pi_stacking = True
                 results["core_features"]["Pi-Stacking Core"] = {
@@ -90,8 +101,8 @@ class AdenosinePharmacophoreAnalyzer:
             core_matched += 1.0
             
         # Check H-Bond Donor/Acceptor network
-        hbd_pat = Chem.MolFromSmarts(cls.CORE_FEATURES["Conserved H-Bond Donor (Asn253/Glu169 interaction)"])
-        hba_pat = Chem.MolFromSmarts(cls.CORE_FEATURES["Conserved H-Bond Acceptor"])
+        hbd_pat = cls._get_pattern(cls.CORE_FEATURES["Conserved H-Bond Donor (Asn253/Glu169 interaction)"])
+        hba_pat = cls._get_pattern(cls.CORE_FEATURES["Conserved H-Bond Acceptor"])
         
         hbd_match = hbd_pat and mol.HasSubstructMatch(hbd_pat)
         hba_match = hba_pat and mol.HasSubstructMatch(hba_pat)
@@ -114,7 +125,7 @@ class AdenosinePharmacophoreAnalyzer:
             total_st_features = len(features)
             
             for name, smarts in features.items():
-                pat = Chem.MolFromSmarts(smarts)
+                pat = cls._get_pattern(smarts)
                 matched = bool(pat and mol.HasSubstructMatch(pat))
                 results["subtype_features"][st][name] = matched
                 if matched:

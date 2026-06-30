@@ -15,15 +15,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt requirements-dev.txt ./
+# Install RDKit via conda (pip install rdkit fails on many Linux systems)
+RUN conda install -y -c conda-forge rdkit && conda clean -afy
 
+# Install Python dependencies (layer cached until requirements change)
+COPY requirements.txt ./
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -r requirements-dev.txt
+    pip install --no-cache-dir -r requirements.txt
 
+# Verify critical imports
 RUN python -c "from rdkit import Chem; print('RDKit OK')" && \
     python -c "from mapie.regression import CrossConformalRegressor; print('MAPIE OK')"
 
+# Copy application code
 COPY . .
 
 RUN adduser --disabled-password --gecos "" appuser && \

@@ -44,10 +44,15 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
 
     # Extract fitted base estimator for SHAP TreeExplainer
     # MAPIE 1.4.1 CrossConformalRegressor stores CV estimators in _mapie_regressor
-    if type(model).__name__ == "CrossConformalRegressor":
-        estimator = model._mapie_regressor.estimator_.estimators_[0]
-    elif type(model).__name__ == "MapieRegressor":
-        estimator = model.estimators_[0]
+    model_type = type(model).__name__
+    if model_type in ("CrossConformalRegressor", "MapieRegressor"):
+        reg = model._mapie_regressor.estimator_ if model_type == "CrossConformalRegressor" else model.estimator_
+        if hasattr(reg, "single_estimator_"):
+            estimator = reg.single_estimator_
+        elif hasattr(reg, "estimators_") and len(reg.estimators_) > 0:
+            estimator = reg.estimators_[0]
+        else:
+            estimator = reg
     elif isinstance(model, list) and len(model) > 0:
         estimator = model[0]
     else:

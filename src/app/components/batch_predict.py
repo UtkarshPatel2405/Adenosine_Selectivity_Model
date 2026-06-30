@@ -36,7 +36,8 @@ def predict_batch(
 
     # Load train_fps safely for applicability domain
     try:
-        with open("data/processed/train_fps.pkl", "rb") as f:
+        from src.config import PROCESSED_DATA_DIR
+        with open(PROCESSED_DATA_DIR / "train_fps.pkl", "rb") as f:
             train_fps = pickle.load(f)
     except FileNotFoundError:
         train_fps = None

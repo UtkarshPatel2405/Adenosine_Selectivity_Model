@@ -138,25 +138,12 @@ def evaluate(mode: str = "precise",
             per_subtype[st] = {"n_test": int(len(yte)), "skipped": True, "error": "No model"}
             continue
 
-        # Use the unified _ensemble_predict dispatch which handles
-        # CrossConformalRegressor, MapieRegressor, list ensembles, and raw regressors
-        preds_list = []
-        stds_list = []
-        lowers_list = []
-        uppers_list = []
-
-        for i in range(len(yte)):
-            x_row = Xte[i:i + 1]
-            m, s, low, high = _ensemble_predict(model_ens, x_row)
-            preds_list.append(m)
-            stds_list.append(s)
-            lowers_list.append(low)
-            uppers_list.append(high)
-
-        preds = np.array(preds_list)
-        stds = np.array(stds_list)
-        lowers = np.array(lowers_list)
-        uppers = np.array(uppers_list)
+        # Use vectorized prediction directly on the batch Xte
+        preds, stds, lowers, uppers = _ensemble_predict(model_ens, Xte)
+        preds = np.atleast_1d(preds)
+        stds = np.atleast_1d(stds)
+        lowers = np.atleast_1d(lowers)
+        uppers = np.atleast_1d(uppers)
 
         mean_std = float(np.mean(stds))
         if mean_std < 1e-6:
@@ -197,6 +184,7 @@ def evaluate(mode: str = "precise",
             gnn_model_path = MODELS_DIR / "gnn" / f"gnn_{st.lower()}_model.pt"
             if gnn_model_path.exists():
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                # Safe to use weights_only=False here as checkpoints are generated locally by our pipeline.
                 checkpoint = torch.load(gnn_model_path, map_location=device, weights_only=False)
                 gnn_model = MoleculeGNN(
                     node_dim=checkpoint.get("node_dim", 140),

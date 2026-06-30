@@ -1,6 +1,7 @@
 import logging
 import pickle
 from pathlib import Path
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,10 @@ from rdkit.Chem import AllChem, Descriptors, Lipinski, MACCSkeys
 from sklearn.preprocessing import StandardScaler
 from rdkit.Chem import rdFingerprintGenerator
 
-from src.config import FEATURE_NAN_THRESHOLD, FEATURE_VAR_THRESHOLD, FEATURE_CORR_THRESHOLD
+from src.config import (
+    FEATURE_NAN_THRESHOLD, FEATURE_VAR_THRESHOLD, FEATURE_CORR_THRESHOLD,
+    MODELS_DIR, PROCESSED_DATA_DIR
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +116,7 @@ class FeaturePipeline:
         return getattr(self.scaler, name)
 
 
+@lru_cache(maxsize=128)
 def _morgan_bits(smiles: str, n_bits: int = 2048) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -121,9 +126,10 @@ def _morgan_bits(smiles: str, n_bits: int = 2048) -> np.ndarray:
     fp = generator.GetFingerprint(mol)  # ExplicitBitVect
     arr = np.zeros((n_bits,), dtype=np.uint8)
     DataStructs.ConvertToNumpyArray(fp, arr)
-    return arr
+    return arr.copy()
 
 
+@lru_cache(maxsize=128)
 def _maccs_bits(smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -132,7 +138,7 @@ def _maccs_bits(smiles: str) -> np.ndarray:
     n_bits = fp.GetNumBits()
     arr = np.zeros((n_bits,), dtype=np.uint8)
     DataStructs.ConvertToNumpyArray(fp, arr)
-    return arr
+    return arr.copy()
 
 
 CURATED_DESCRIPTORS_LIST = [
@@ -155,6 +161,7 @@ CURATED_DESCRIPTORS_LIST = [
 ]
 
 
+@lru_cache(maxsize=128)
 def _descriptors(smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -177,6 +184,7 @@ for name in CURATED_DESCRIPTORS_LIST:
     _DESC_FUNCS[name] = func
 
 
+@lru_cache(maxsize=128)
 def _all_descriptors(smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -222,7 +230,8 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
     train_fps = Parallel(n_jobs=-1)(delayed(_get_fp)(s) for s in train_smiles)
     
     if save_to_disk:
-        with open("data/processed/train_fps.pkl", "wb") as f:
+        PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(PROCESSED_DATA_DIR / "train_fps.pkl", "wb") as f:
             pickle.dump(train_fps, f)
 
     logger.info("Computing curated RDKit descriptors (%d)...", len(CURATED_DESCRIPTORS_LIST))
@@ -254,19 +263,19 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
     X_test = np.hstack([X_fp_test, Xdesc_test_s]).astype(np.float32)
 
     if save_to_disk:
-        Path("models").mkdir(parents=True, exist_ok=True)
-        with open("models/scaler.pkl", "wb") as f:
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(MODELS_DIR / "scaler.pkl", "wb") as f:
             pickle.dump(pipeline, f)
         
-        Path("data/processed").mkdir(parents=True, exist_ok=True)
-        with open("data/processed/train_smiles.pkl", "wb") as f:
+        PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(PROCESSED_DATA_DIR / "train_smiles.pkl", "wb") as f:
             pickle.dump(train_smiles, f)
-        with open("data/processed/test_smiles.pkl", "wb") as f:
+        with open(PROCESSED_DATA_DIR / "test_smiles.pkl", "wb") as f:
             pickle.dump(test_smiles, f)
 
-        with open("data/processed/features_train.pkl", "wb") as f:
+        with open(PROCESSED_DATA_DIR / "features_train.pkl", "wb") as f:
             pickle.dump(X_train, f)
-        with open("data/processed/features_test.pkl", "wb") as f:
+        with open(PROCESSED_DATA_DIR / "features_test.pkl", "wb") as f:
             pickle.dump(X_test, f)
 
     return X_train, X_test, pipeline

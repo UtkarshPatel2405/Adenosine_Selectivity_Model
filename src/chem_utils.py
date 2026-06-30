@@ -1,10 +1,10 @@
 from __future__ import annotations
-
+import json
 import pickle
 import os
 from functools import lru_cache
 from typing import Optional
-from pathlib import Path # Ensure Path is imported
+from pathlib import Path 
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -19,9 +19,8 @@ except ImportError:
 
 _MORGAN = GetMorganGenerator(radius=2, fpSize=2048)
 
-# Calculate the absolute path to the root of your project
-# This assumes chem_utils.py is inside the src/ folder
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from src.config import PROCESSED_DATA_DIR
 
 def canonicalize(smiles: str) -> Optional[str]:
     if not isinstance(smiles, str) or not smiles.strip():
@@ -163,8 +162,7 @@ def qed_profile(smiles: str) -> Optional[dict]:
 
 @lru_cache(maxsize=1)
 def _load_train_fps():
-    # Use absolute path based on PROJECT_ROOT
-    path = PROJECT_ROOT / "data" / "processed" / "train_fps.pkl"
+    path = PROCESSED_DATA_DIR / "train_fps.pkl"
     with open(path, "rb") as f:
         return pickle.load(f)
 
@@ -181,13 +179,63 @@ def nearest_tanimoto(smiles: str) -> Optional[float]:
     return float(np.max(sims)) if sims else None
 
 @lru_cache(maxsize=1)
+def _load_smiles_to_pdb() -> dict:
+    path = PROCESSED_DATA_DIR / "smiles_to_pdb.json"
+    if not path.exists():
+        return {"known_ligands": {}}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {"known_ligands": {}}
+
+
+def _smiles_hash(smiles: str) -> str:
+    import hashlib
+    return hashlib.sha256(smiles.encode("utf-8")).hexdigest()[:12]
+
+
+def lookup_pdb_ids(smiles: str) -> list[dict]:
+    canon = canonicalize(smiles)
+    if canon is None:
+        return []
+    data = _load_smiles_to_pdb()
+    known = data.get("known_ligands", {})
+    from functools import lru_cache as _lru
+    hits = []
+    for ccd, info in known.items():
+        try:
+            known_canon = canonicalize(info.get("smiles", ""))
+            if known_canon and known_canon == canon:
+                for pdb_id in info.get("pdb_ids", []):
+                    hits.append({"pdb_id": pdb_id, "ccd": ccd, "name": info.get("name", "")})
+        except Exception:
+            continue
+    return hits
+
+
+def topk_tanimoto_with_pdb(smiles: str, k: int = 5) -> tuple[Optional[str], list[dict]]:
+    canon, top = topk_tanimoto(smiles, k=k)
+    if not top:
+        return canon, []
+    results = []
+    for smi, tan in top:
+        pdb_info = lookup_pdb_ids(smi)
+        results.append({
+            "smiles": smi,
+            "tanimoto": tan,
+            "pdb_entries": pdb_info,
+        })
+    return canon, results
+
+
+@lru_cache(maxsize=1)
 def _load_train_smiles() -> list[str]:
-    # Use absolute path based on PROJECT_ROOT
-    path = PROJECT_ROOT / "data" / "processed" / "train_smiles.pkl"
+    path = PROCESSED_DATA_DIR / "train_smiles.pkl"
     with open(path, "rb") as f:
         return pickle.load(f)
 
-def topk_tanimoto(smiles: str, k: int = 5) -> tuple[Optional[str], list[tuple[str, float]]]:
+def topk_tanimoto(smiles: str, k: int = 10) -> tuple[Optional[str], list[tuple[str, float]]]:
     canon = canonicalize(smiles)
     if canon is None:
         return None, []

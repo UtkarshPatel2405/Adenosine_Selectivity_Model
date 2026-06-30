@@ -19,7 +19,10 @@ def _try_gnn_predict(smiles, subtype):
     try:
         from src.gnn_model import predict_gnn
         return predict_gnn(smiles, subtype)
-    except (ImportError, Exception):
+    except ImportError:
+        return None
+    except Exception as e:
+        logger.warning("GNN prediction failed for %s/%s: %s", subtype, smiles[:30], e)
         return None
 
 
@@ -27,6 +30,7 @@ def _try_gnn_predict(smiles, subtype):
 def _load_scaler(mode: str = "precise"):
     candidate_paths = [
         MODELS_DIR / mode / f"scaler_{mode}.pkl",
+        MODELS_DIR / mode / "scaler.pkl",
         MODELS_DIR / "scaler.pkl",
     ]
     last_err = None
@@ -57,6 +61,10 @@ def _load_xgb_models():
         path = MODELS_DIR / "precise" / f"xgboost_{st}_production.pkl"
         if not path.exists():
             path = MODELS_DIR / f"xgboost_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"xgboost_precise_{st.lower()}_model.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"xgboost_{st.lower()}_model.pkl"
         if path.exists():
             try:
                 with open(path, "rb") as f:
@@ -64,7 +72,7 @@ def _load_xgb_models():
             except Exception as e:
                 logger.error("Failed to load XGBoost model for %s from %s: %s", st, path, e)
         else:
-            logger.warning("XGBoost model for %s not found at %s", st, path)
+            logger.warning("XGBoost model for %s not found at any path", st)
     return models
 
 
@@ -75,6 +83,10 @@ def _load_rf_models():
         path = MODELS_DIR / "precise" / f"rf_{st}_production.pkl"
         if not path.exists():
             path = MODELS_DIR / f"rf_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"rf_precise_{st.lower()}_model.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"rf_{st.lower()}_model.pkl"
         if path.exists():
             try:
                 with open(path, "rb") as f:
@@ -82,67 +94,78 @@ def _load_rf_models():
             except Exception as e:
                 logger.error("Failed to load RandomForest model for %s from %s: %s", st, path, e)
         else:
-            logger.warning("RandomForest model for %s not found at %s", st, path)
+            logger.warning("RandomForest model for %s not found at any path", st)
     return models
 
 
-def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[float, float, float, float]:
+def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[Any, Any, Any, Any]:
     """
     Returns (pred_mean, uncertainty_std_equiv, lower_bound, upper_bound).
 
-    Production models are raw XGBRegressor (no MAPIE wrapper in pickle).
-
-    Falls back gracefully for legacy models (CrossConformalRegressor, MapieRegressor,
-    list ensembles, raw sklearn, etc.).
+    Supports both single sample and batch inputs.
     """
     if x.ndim == 1:
         x = x.reshape(1, -1)
 
+    is_batch = x.shape[0] > 1
     model_type_name = type(model_ens).__name__
 
     if model_type_name == "CrossConformalRegressor":
         try:
             y_pred, y_pis = model_ens.predict_interval(x)
             if y_pis.ndim == 3:
-                lower = float(y_pis[0, 0, 0])
-                upper = float(y_pis[0, 1, 0])
+                lower = y_pis[:, 0, 0]
+                upper = y_pis[:, 1, 0]
             else:
-                lower = float(y_pis[0, 0])
-                upper = float(y_pis[0, 1])
-            std_equiv = float(upper - lower) / 3.29
-            logger.debug("Conformal pred: %.3f [%.3f, %.3f] (std=%.3f)",
-                         float(y_pred[0]), lower, upper, std_equiv)
-            return float(y_pred[0]), std_equiv, lower, upper
+                lower = y_pis[:, 0]
+                upper = y_pis[:, 1]
+            std_equiv = (upper - lower) / 3.29
+            if not is_batch:
+                return float(y_pred[0]), float(std_equiv[0]), float(lower[0]), float(upper[0])
+            return y_pred, std_equiv, lower, upper
         except Exception as e:
             logger.warning("CrossConformalRegressor predict_interval failed: %s. Falling back.", e)
-            pred = float(model_ens.predict(x)[0])
-            return pred, 0.0, pred, pred
+            y_pred = model_ens.predict(x)
+            if not is_batch:
+                return float(y_pred[0]), 0.0, float(y_pred[0]), float(y_pred[0])
+            zeros = np.zeros_like(y_pred)
+            return y_pred, zeros, y_pred, y_pred
 
     elif model_type_name == "MapieRegressor":
         try:
             y_pred, y_pis = model_ens.predict(x)
             if y_pis.ndim == 3:
-                lower = float(y_pis[0, 0, 0])
-                upper = float(y_pis[0, 1, 0])
+                lower = y_pis[:, 0, 0]
+                upper = y_pis[:, 1, 0]
             else:
-                lower = float(y_pis[0, 0])
-                upper = float(y_pis[0, 1])
-            std_equiv = float(upper - lower) / 3.29
-            return float(y_pred[0]), std_equiv, lower, upper
+                lower = y_pis[:, 0]
+                upper = y_pis[:, 1]
+            std_equiv = (upper - lower) / 3.29
+            if not is_batch:
+                return float(y_pred[0]), float(std_equiv[0]), float(lower[0]), float(upper[0])
+            return y_pred, std_equiv, lower, upper
         except Exception as e:
             logger.warning("MapieRegressor predict failed: %s. Falling back.", e)
-            pred = float(model_ens.predict(x)[0])
-            return pred, 0.0, pred, pred
+            y_pred = model_ens.predict(x)
+            if not is_batch:
+                return float(y_pred[0]), 0.0, float(y_pred[0]), float(y_pred[0])
+            zeros = np.zeros_like(y_pred)
+            return y_pred, zeros, y_pred, y_pred
 
     elif isinstance(model_ens, (list, tuple)):
-        preds = np.array([float(m.predict(x)[0]) for m in model_ens])
-        mean = float(preds.mean())
-        std = float(preds.std(ddof=0))
+        member_preds = np.array([m.predict(x) for m in model_ens])
+        mean = member_preds.mean(axis=0)
+        std = member_preds.std(axis=0, ddof=0)
+        if not is_batch:
+            return float(mean[0]), float(std[0]), float(mean[0] - 1.96 * std[0]), float(mean[0] + 1.96 * std[0])
         return mean, std, mean - 1.96 * std, mean + 1.96 * std
 
     else:
-        pred = float(model_ens.predict(x)[0])
-        return pred, 0.0, pred, pred
+        pred = model_ens.predict(x)
+        if not is_batch:
+            return float(pred[0]), 0.0, float(pred[0]), float(pred[0])
+        zeros = np.zeros_like(pred)
+        return pred, zeros, pred, pred
 
 
 def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[str, Any]:
@@ -173,9 +196,6 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
     unc = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
     intervals = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
 
-    docking_scores = None
-    if in_db and isinstance(lookup[canon], dict) and "docking" in lookup[canon]:
-        docking_scores = lookup[canon]["docking"]
 
     x = build_features(canon, scaler) if scaler is not None else None
 
@@ -251,5 +271,4 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
         "best_target": max(ref_preds, key=ref_preds.get) if ref_preds else None,
         "target_hits": [st for st, v in ref_preds.items() if v >= threshold] if ref_preds else [],
         "source": source,
-        "docking_scores": docking_scores,
     }

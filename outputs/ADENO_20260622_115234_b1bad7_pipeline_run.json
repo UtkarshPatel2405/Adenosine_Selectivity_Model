@@ -1,8 +1,0 @@
-{
-  "gnn_epochs": 100,
-  "run_id": "ADENO_20260622_115234_b1bad7",
-  "skip_gnn": true,
-  "skip_retrain": false,
-  "timestamp": "2026-06-22 11:52:34",
-  "y_rand_iterations": 20
-}

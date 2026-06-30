@@ -65,8 +65,32 @@ try:
 except ImportError:
     pass
 
-# ── Run ID (generated once per process, lazy import to avoid circular deps) ──
-import importlib
-_run_id_module = importlib.import_module("src.run_id")
-RUN_ID: str = _run_id_module.generate_run_id()
-RUN_TIMESTAMP: str = __import__("time").strftime("%Y-%m-%d %H:%M:%S")
+# ── Run ID (generated once per process, lazy on first access) ──
+import time as _time
+
+_RUN_ID: str | None = None
+_RUN_TIMESTAMP: str | None = None
+
+
+def _get_run_id() -> str:
+    global _RUN_ID
+    if _RUN_ID is None:
+        from src.run_id import generate_run_id
+        _RUN_ID = generate_run_id()
+    return _RUN_ID
+
+
+def _get_run_timestamp() -> str:
+    global _RUN_TIMESTAMP
+    if _RUN_TIMESTAMP is None:
+        _RUN_TIMESTAMP = _time.strftime("%Y-%m-%d %H:%M:%S")
+    return _RUN_TIMESTAMP
+
+
+def __getattr__(name):
+    if name == "RUN_ID":
+        return _get_run_id()
+    if name == "RUN_TIMESTAMP":
+        return _get_run_timestamp()
+    raise AttributeError(f"module 'src.config' has no attribute {name!r}")
+

@@ -45,7 +45,7 @@ python -m src.shap_analysis
 
 ### 3. Launch the Dashboard
 ```bash
-streamlit run src/streamlit_app.py
+streamlit run streamlit_app.py
 ```
 
 ## 📊 Evaluation & Artifacts

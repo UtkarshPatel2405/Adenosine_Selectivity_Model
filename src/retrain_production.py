@@ -160,14 +160,26 @@ def retrain_production_models(data_path: str = "data/raw"):
             logger.warning("  Conformal wrapping failed (%s). Saving raw model.", e)
             conformal_model = base_xgb
 
-        rf_model = RandomForestRegressor(
+        rf_base = RandomForestRegressor(
             n_estimators=RF_N_ESTIMATORS,
             max_depth=RF_MAX_DEPTH,
             max_features=RF_MAX_FEATURES,
             random_state=42,
             n_jobs=2,
         )
-        rf_model.fit(X_tr, y_tr)
+        logger.info("  Wrapping RandomForest with MAPIE CrossConformalRegressor...")
+        try:
+            rf_model = train_conformal_model(
+                base_model=rf_base,
+                X_train=X_tr,
+                y_train=y_tr,
+                cv=MAPIE_CV_FOLDS,
+            )
+            logger.info("  RF Conformal wrapping succeeded.")
+        except Exception as e:
+            logger.warning("  RF Conformal wrapping failed (%s). Saving raw model.", e)
+            rf_model = rf_base
+            rf_model.fit(X_tr, y_tr)
 
         preds_tr_xgb = conformal_model.predict(X_tr) if hasattr(conformal_model, 'predict') else base_xgb.predict(X_tr)
         preds_te_xgb = conformal_model.predict(X_te) if hasattr(conformal_model, 'predict') else base_xgb.predict(X_te)
@@ -201,13 +213,10 @@ def retrain_production_models(data_path: str = "data/raw"):
         logger.info("  Saved XGBoost model (type=%s) to %s", type(conformal_model).__name__, xgb_path)
 
         shutil.copy(xgb_path, MODELS_DIR / f"xgboost_precise_{st.lower()}_model.pkl")
-        with open(MODELS_DIR / f"xgboost_{st.lower()}_model.pkl", "wb") as f:
-            pickle.dump(conformal_model, f)
+        shutil.copy(xgb_path, MODELS_DIR / f"xgboost_{st.lower()}_model.pkl")
 
-        with open(models_precise_dir / f"rf_precise_{st.lower()}_model.pkl", "wb") as f:
-            pickle.dump(rf_model, f)
-        with open(MODELS_DIR / f"rf_{st.lower()}_model.pkl", "wb") as f:
-            pickle.dump(rf_model, f)
+        shutil.copy(rf_path, MODELS_DIR / f"rf_precise_{st.lower()}_model.pkl")
+        shutil.copy(rf_path, MODELS_DIR / f"rf_{st.lower()}_model.pkl")
 
     from src.run_id import save_with_run_id
 

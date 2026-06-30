@@ -355,6 +355,8 @@ def train_gnn_model(subtype: str, epochs: int = 100, lr: float = 1e-3, batch_siz
                 break
 
     # Final evaluation with best model
+    # Note: weights_only=False is used because checkpoints store custom metadata and python dicts.
+    # Safe since checkpoints are produced locally by this pipeline, not fetched from untrusted sources.
     checkpoint = torch.load(Path("models/gnn") / f"gnn_{subtype.lower()}_model.pt", weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -437,6 +439,7 @@ def predict_gnn(smiles: str, subtype: str) -> Optional[float]:
         return None
     
     device = torch.device("cpu")
+    # Safe to use weights_only=False here as checkpoints are generated locally by our pipeline.
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
     model = MoleculeGNN(

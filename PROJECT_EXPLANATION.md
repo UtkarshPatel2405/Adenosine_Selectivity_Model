@@ -43,21 +43,27 @@ This chapter details the files located in the root of the workspace. These orche
 ---
 
 ### 2.1 `streamlit_app.py` (Root)
-* **Role**: Serve as the initial execution entrypoint for Streamlit.
+* **Role**: The unified webapp dashboard entry point, managing layouts, tab controls, molecular property displays, multi-model selectivity predictions, and CSV download capabilities.
 * **Code Fragment**:
 ```python
-import sys
-from pathlib import Path
+import streamlit as st
+import pandas as pd
+from src.app.css import _CSS
+from src.app.components.sidebar import render_sidebar
+from src.app.pages.single_predict import render_single_predict
+from src.app.pages.batch_predict import render_batch_predict
+from src.app.pages.model_results import render_model_results
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from src.streamlit_app import run_app
-
-run_app()
+def run_app():
+    st.set_page_config(page_title="AR Selectivity Predictor", layout="wide")
+    st.markdown(_CSS, unsafe_allow_html=True)
+    # ... Tab initialization ...
+    t1, t2, t3 = st.tabs(["Single molecule", "Batch CSV", "Model results"])
+    with t1: render_single_predict()
+    with t2: render_batch_predict()
+    with t3: render_model_results()
 ```
-* **Logic**: Streamlit runs scripts relative to where it is launched. This file inserts the project root into the Python system path `sys.path` so that nested imports like `from src.predictor import ...` resolve successfully, then runs the app from the `src` folder.
+* **Logic**: Streamlit runs this root script directly. It configures the wide layout, injects customized CSS stylesheets, renders the sidebar, and routes users between page modules (Single molecule prediction, Batch prediction, and Model results metrics tables).
 
 ---
 

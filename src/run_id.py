@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -7,14 +8,14 @@ from typing import Optional
 
 def generate_run_id(prefix: str = "ADENO") -> str:
     """
-    Generate a unique, deterministic run ID.
+    Generate a unique run ID.
 
     Format: {prefix}_{YYYYMMDD}_{HHMMSS}_{short_hash}
     Example: ADENO_20260622_143021_a3f7c2
     """
     now = time.time_ns()
     timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(now // 10**9))
-    hash_input = f"{now}_{id({})}"
+    hash_input = f"{now}_{os.getpid()}_{os.urandom(4).hex()}"
     short_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:6]
     return f"{prefix}_{timestamp}_{short_hash}"
 
