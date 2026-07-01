@@ -48,7 +48,8 @@ models/
 *.log
 *.bak
 uv.lock.bak
-packages.txt
+# packages.txt is used by Streamlit Cloud for apt system dependencies
+# packages.txt
 
 # Outputs (keep config and validation templates, ignore run registry/archive/intermediates)
 outputs/archive/
