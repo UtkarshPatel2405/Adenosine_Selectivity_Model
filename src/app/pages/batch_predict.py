@@ -26,10 +26,10 @@ def render_batch_predict():
             rd = predict_batch(df, 6.0, smiles_col=sc, mode="precise")
             errs = rd["error"].notna().sum() if "error" in rd.columns else 0
             ok = len(rd) - errs
-            st.markdown('<div class="mg">', unsafe_allow_html=True)
-            for lb, vl in [("Total", len(rd)), ("OK", ok), ("Errors", errs), ("Hit%", f"{(rd['best_target'].notna() & rd['best_target'].isin(SUBTYPES)).sum() / ok * 100:.0f}%" if ok else "0")]:
-                st.markdown(f'<div class="mi"><div class="v" style="color:#f8fafc">{vl}</div><div class="l">{lb}</div></div>', unsafe_allow_html=True)
-            st.markdown('</div>')
+            cols = st.columns(4)
+            vals = [len(rd), ok, errs, f"{rd['best_target'].notna().sum() / ok * 100:.0f}%" if ok else "0"]
+            for col, lb, vl in zip(cols, ["Total","OK","Errors","Hit%"], vals):
+                col.metric(lb, vl)
             dc = [c for c in [sc, 'A1', 'A2A', 'A2B', 'A3', 'best_target'] if c in rd.columns]
             st.dataframe(rd[dc], use_container_width=True, height=250)
             
