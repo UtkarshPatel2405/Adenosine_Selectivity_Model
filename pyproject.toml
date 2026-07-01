@@ -24,7 +24,9 @@ dependencies = [
     "joblib",
     "py3Dmol",
     "mapie",
-    "shap",
+    "shap>=0.45.1",
+    "numba>=0.57.0",
+    "llvmlite>=0.40.0",
     "python-dotenv",
 ]
 
