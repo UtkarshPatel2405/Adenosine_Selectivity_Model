@@ -13,7 +13,11 @@ def render_batch_predict():
         st.markdown('</div>', unsafe_allow_html=True)
         return
         
-    df = pd.read_csv(up)
+    try:
+        df = pd.read_csv(up, encoding='utf-8')
+    except UnicodeDecodeError:
+        up.seek(0)
+        df = pd.read_csv(up, encoding='latin1')
     sc = _infer_smiles_col(df)
     st.markdown(f'**{sc}** · {len(df)} rows')
     
