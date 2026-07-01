@@ -10,8 +10,8 @@ streamlit
 joblib
 py3Dmol
 mapie
-shap>=0.45.1
-numba>=0.57.0
-llvmlite>=0.40.0
+shap>=0.52.0
+numba>=0.60.0
+llvmlite>=0.43.0
 python-dotenv
 requests
