@@ -48,7 +48,7 @@ def draw_2d(smiles: str, size: tuple[int, int] = (400, 300)):
     except Exception:
         return None
 
-def draw_2d_svg(smiles: str, size: tuple[int, int] = (400, 300)) -> Optional[str]:
+def draw_2d_svg(smiles: str, size: tuple[int, int] = (400, 300)):
     mol = mol_from_smiles(smiles)
     if mol is None:
         return None
@@ -60,6 +60,12 @@ def draw_2d_svg(smiles: str, size: tuple[int, int] = (400, 300)) -> Optional[str
         drawer.DrawMolecule(mol)
         drawer.FinishDrawing()
         return drawer.GetDrawingText()
+    except Exception:
+        pass
+    try:
+        from rdkit.Chem import Draw
+        img = Draw.MolToImage(mol, size=size)
+        return img
     except Exception:
         return None
 
