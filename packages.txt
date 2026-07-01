@@ -1,4 +1,7 @@
+libcairo2
+libpango-1.0-0
+libpangocairo-1.0-0
+libgdk-pixbuf2.0-0
 libxrender1
 libxext6
-libgl1-mesa-glx
 libglib2.0-0
