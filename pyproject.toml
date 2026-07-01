@@ -10,7 +10,7 @@ description = "Publication-grade QSAR platform for adenosine receptor binding af
 authors = [{ name = "Utkarsh Patel" }]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "numpy",
     "pandas",
