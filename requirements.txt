@@ -2,7 +2,8 @@ numpy
 pandas
 scikit-learn
 xgboost
-rdkit
+rdkit>=2024.03
+Pillow
 plotly
 matplotlib
 seaborn
