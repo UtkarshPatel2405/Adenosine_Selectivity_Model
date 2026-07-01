@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, Descriptors, Lipinski, QED, Draw
+from rdkit.Chem import AllChem, Descriptors, Lipinski, QED
 from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 
 try:
@@ -41,7 +41,7 @@ def draw_2d(smiles: str, size: tuple[int, int] = (400, 300)):
     if mol is None:
         return None
     try:
-        from rdkit.Chem import rdDepictor
+        from rdkit.Chem import Draw, rdDepictor
         rdDepictor.Compute2DCoords(mol)
         img = Draw.MolToImage(mol, size=size)
         return img
