@@ -1,6 +1,11 @@
 import sys
 from pathlib import Path
 
+# Force reload of local app modules when streamlit reruns to prevent stale module cache
+for module_name in list(sys.modules.keys()):
+    if module_name.startswith("src.app"):
+        del sys.modules[module_name]
+
 # Force matplotlib backend and initialize early to avoid circular import issues in Streamlit
 import matplotlib
 matplotlib.use('Agg')
@@ -96,7 +101,7 @@ def run_app():
             <span class="badge badge-purple" style="font-size:.55rem">GPCR Selectivity</span>
           </div>
           <h1>Adenosine Receptor<br>Selectivity Predictor</h1>
-          <p>Rapid <i>in silico</i> pChEMBL profiling across A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub> &middot; XGBoost + RF + GNN + conformal prediction</p>
+          <p>Rapid <i>in silico</i> pChEMBL profiling across A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub> &middot; XGBoost + RF + LightGBM + Stacked ensemble + conformal prediction</p>
           <div class="badge-row" style="margin-top:.5rem">
             <span class="badge badge-blue">R² {m["r2"]}</span><span class="badge badge-green">MAE {m["mae"]}</span><span class="badge badge-purple">{m["n"]} compounds</span>
             {status_tags}
@@ -125,7 +130,7 @@ def run_app():
             "are validated drug targets for cardiovascular disease, inflammation, cancer immunotherapy, and CNS disorders. "
             "But designing <strong>subtype-selective</strong> ligands is one of the hardest challenges in GPCR drug discovery — "
             "the four subtypes share >70% sequence identity in the transmembrane binding pocket.<br><br>"
-            "<strong>⚡ Our Solution:</strong> A multi-model ML ensemble (XGBoost + RandomForest + GNN) "
+            "<strong>⚡ Our Solution:</strong> A multi-model ML ensemble (XGBoost + RandomForest + LightGBM + Ridge Stacking) "
             "trained on 33K+ pChEMBL values with conformal prediction intervals that quantify uncertainty. "
             "Enter a SMILES string or PDB ID and get <strong>instant pChEMBL predictions</strong> across all 4 subtypes, "
             "selectivity ratios, drug-likeness profiles, PAINS alerts, and SHAP explanations — all in one place."

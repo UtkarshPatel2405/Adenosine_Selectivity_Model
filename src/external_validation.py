@@ -243,14 +243,14 @@ def run_external_validation(novel_df: pd.DataFrame = None, mode: str = "precise"
     from src.config import RUN_ID, OUTPUTS_DIR
     from src.run_id import save_with_run_id
 
-    report["run_id"] = RUN_ID
+    metrics["run_id"] = RUN_ID
     out_dir = OUTPUTS_DIR / "external_validation"
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    save_with_run_id(report, out_dir, "external_validation_report", RUN_ID)
+    save_with_run_id(metrics, out_dir, "external_validation_report", RUN_ID)
     print(f"\n[SUCCESS] External validation report saved to {out_dir} with run ID {RUN_ID}")
     
-    return report
+    return metrics
 
 
 if __name__ == "__main__":

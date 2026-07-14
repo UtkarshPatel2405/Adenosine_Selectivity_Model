@@ -52,8 +52,18 @@ def scaffold_split(df: pd.DataFrame, test_size: float = 0.2, random_state: int =
     for scaf in scaffold_keys:
         indices = scaffold_to_indices[scaf]
         if test_count < n_test_target:
-            test_indices.extend(indices)
-            test_count += len(indices)
+            remaining = n_test_target - test_count
+            if len(indices) <= remaining:
+                test_indices.extend(indices)
+                test_count += len(indices)
+            else:
+                # Probabilistic assignment to avoid overshoot: add to test
+                # with probability proportional to remaining gap
+                if rng.random() * n_test_target < remaining:
+                    test_indices.extend(indices)
+                    test_count += len(indices)
+                else:
+                    train_indices.extend(indices)
         else:
             train_indices.extend(indices)
 
@@ -90,8 +100,16 @@ def split_smiles_globally(smiles_list: list, test_size: float = 0.2, random_stat
     for scaf in scaffold_keys:
         smi_list = scaffold_to_smiles[scaf]
         if test_count < n_test_target:
-            test_smiles.update(smi_list)
-            test_count += len(smi_list)
+            remaining = n_test_target - test_count
+            if len(smi_list) <= remaining:
+                test_smiles.update(smi_list)
+                test_count += len(smi_list)
+            else:
+                if rng.random() * n_test_target < remaining:
+                    test_smiles.update(smi_list)
+                    test_count += len(smi_list)
+                else:
+                    train_smiles.update(smi_list)
         else:
             train_smiles.update(smi_list)
             

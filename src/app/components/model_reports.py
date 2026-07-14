@@ -59,10 +59,10 @@ def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[
 
     overall = report.get("overall", {})
     overall_df = pd.DataFrame([{
-        "MAE": round(overall.get("model_mae", 0), 4),
-        "RMSE": round(overall.get("model_rmse", 0), 4),
-        "R2": round(overall.get("model_r2", 0), 4),
-        "Baseline R2": round(overall.get("baseline_r2", 0), 4),
+        "Ensemble/XGB MAE": round(overall.get("model_mae", 0), 4),
+        "Ensemble/XGB RMSE": round(overall.get("model_rmse", 0), 4),
+        "Ensemble/XGB R²": round(overall.get("model_r2", 0), 4),
+        "Baseline R²": round(overall.get("baseline_r2", 0), 4),
         "Conformal Coverage (90%)": f"{overall.get('conformal_coverage_90', 0.0) * 100:.1f}%" if overall.get("conformal_coverage_90") is not None else "N/A",
     }])
 
@@ -72,9 +72,12 @@ def load_evaluation_tables(base: str = "outputs/validoutput/standard") -> Tuple[
         if m.get("skipped"): continue
         rows.append({
             "Subtype": st,
-            "MAE": round(m.get("model_mae", 0), 4),
-            "RMSE": round(m.get("model_rmse", 0), 4),
-            "R2": round(m.get("model_r2", 0), 4),
+            "XGBoost R²": round(m.get("model_r2", 0), 4) if m.get("model_r2") is not None else "N/A",
+            "RandomForest R²": round(m.get("rf_r2", 0), 4) if m.get("rf_r2") is not None else "N/A",
+            "LightGBM R²": round(m.get("lgb_r2", 0), 4) if m.get("lgb_r2") is not None else "N/A",
+            "XGBoost MAE": round(m.get("model_mae", 0), 4) if m.get("model_mae") is not None else "N/A",
+            "RandomForest MAE": round(m.get("rf_mae", 0), 4) if m.get("rf_mae") is not None else "N/A",
+            "LightGBM MAE": round(m.get("lgb_mae", 0), 4) if m.get("lgb_mae") is not None else "N/A",
             "Conformal Coverage (90%)": f"{m.get('conformal_coverage_90', 0.0) * 100:.1f}%" if m.get("conformal_coverage_90") is not None else "N/A",
             "n_test": m.get("n_test"),
         })

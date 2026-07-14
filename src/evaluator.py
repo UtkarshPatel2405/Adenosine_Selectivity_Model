@@ -9,7 +9,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from src.data_loader import load_and_clean
 from src.features import build_feature_matrix
-from src.predictor import _load_xgb_models, _load_rf_models, _ensemble_predict, SUBTYPES, _try_gnn_predict
+from src.predictor import _load_xgb_models, _load_rf_models, _load_lgb_models, _ensemble_predict, SUBTYPES, _try_gnn_predict
 from src.config import (
     SUBTYPES, PROCESSED_DATA_DIR, MODELS_DIR, OUTPUTS_DIR,
     CONFORMAL_ALPHA, LOG_LEVEL, RUN_ID,
@@ -111,6 +111,7 @@ def evaluate(mode: str = "precise",
 
     models = _load_xgb_models()
     rf_models = _load_rf_models()
+    lgb_models = _load_lgb_models()
 
     per_subtype: Dict[str, dict] = {}
     all_preds = []
@@ -242,6 +243,18 @@ def evaluate(mode: str = "precise",
             report_st["rf_mae"] = None
             report_st["rf_rmse"] = None
             report_st["rf_r2"] = None
+
+        lgb_ens = lgb_models.get(st)
+        if lgb_ens:
+            lgb_preds = lgb_ens.predict(Xte)
+            report_st["lgb_mae"] = float(mean_absolute_error(yte, lgb_preds))
+            report_st["lgb_rmse"] = float(np.sqrt(mean_squared_error(yte, lgb_preds)))
+            report_st["lgb_r2"] = float(r2_score(yte, lgb_preds))
+            logger.info("  LightGBM %s: MAE=%.4f, R²=%.4f", st, report_st["lgb_mae"], report_st["lgb_r2"])
+        else:
+            report_st["lgb_mae"] = None
+            report_st["lgb_rmse"] = None
+            report_st["lgb_r2"] = None
 
         per_subtype[st] = report_st
 

@@ -96,7 +96,8 @@ def _render_methodology_badges():
     badges = [
         ("XGBoost", "Gradient-boosted trees with conformal prediction (MAPIE CrossConformalRegressor, Jackknife+)", "badge-blue"),
         ("RF", "Random Forest ensemble (300 trees, sqrt features)", "badge-green"),
-        ("GNN", "MPNN/GINE — Message-passing neural network on molecular graphs", "badge-purple"),
+        ("LightGBM", "Leaf-wise GBDT with conformal prediction (efficient on small data)", "badge-amber"),
+        ("Stacked", "Ridge meta-model on XGBoost+RF+LightGBM OOF predictions", "badge-purple"),
         ("FPs", "Morgan (2048 bit, r=2) + MACCS (166 bit)", "badge-cyan"),
         ("Scaffold", "Bemis-Murcko scaffold split (80/20)", "badge-amber"),
     ]
@@ -245,7 +246,7 @@ def render_single_predict():
     smiles = st.session_state.smiles_val
 
     if st.button("🔬 Predict", use_container_width=True):
-        with st.spinner("Running all 3 models + conformal intervals…"):
+        with st.spinner("Running all 4 models + Ridge stacking + conformal intervals…"):
             try: _run_prediction(smiles, run_rf=True)
             except Exception as e: st.error(f"Error: {e}"); return
 
@@ -326,8 +327,9 @@ def render_single_predict():
     with col2:
         # 1. Affinity with model selector
         st.markdown(f'<div class="section-header">🎯 Predicted Binding Affinity (pChEMBL) <span class="badge badge-cyan">Best: {r["best_target"]}</span></div>', unsafe_allow_html=True)
-        sm_ui = st.selectbox("Model", ["XGBoost", "RandomForest", "GNN (not precise)"], label_visibility="collapsed")
-        sm = "PyTorch" if sm_ui == "GNN (not precise)" else sm_ui
+        available_models = [m for m in ("XGBoost", "RandomForest", "LightGBM", "Stacked") if any(preds.get(m, {}).values())] or ["XGBoost"]
+        sm_ui = st.selectbox("Model", available_models, label_visibility="collapsed")
+        sm = sm_ui
         if sm == "RandomForest" and r["source"] == "model" and not any(preds.get("RandomForest", {}).values()):
             with st.spinner("Loading RF ensemble…"):
                 try:
@@ -336,39 +338,34 @@ def render_single_predict():
                         r[k2]["RandomForest"] = r_rf[k2]["RandomForest"]
                     st.session_state.pred = r; st.rerun()
                 except Exception as e: st.error(f"RF: {e}")
-        gnn_ok = Path("models/gnn/gnn_a1_model.pt").exists()
         for k in SUBTYPES:
             v = preds.get(sm, {}).get(k, 0)
-            if sm == "PyTorch" and not gnn_ok:
-                c_cls, c_lab, pct, co, dv, uv = "badge badge-slate", "N/A", 0, "#64748b", "—", 0
-            else:
-                c_cls, c_lab = _tag(v)
-                pct = min(float(v)/10*100, 100)
-                co = "#2ecc71" if v >= 6 else "#f39c12" if v >= 4.5 else "#e74c3c"
-                dv = f"{v:.2f}"; uv = unc.get(sm, {}).get(k, 0)
+            c_cls, c_lab = _tag(v)
+            pct = min(float(v)/10*100, 100)
+            co = "#2ecc71" if v >= 6 else "#f39c12" if v >= 4.5 else "#e74c3c"
+            dv = f"{v:.2f}"; uv = unc.get(sm, {}).get(k, 0)
             st.markdown(
                 f'<div class="affinity-row">'
                 f'<b>A<sub>{k[1:]}</sub></b>'
                 f'<span class="{c_cls}" style="margin:0 .4rem">{c_lab}</span>'
                 f'<b style="font-size:.9rem;min-width:3rem;text-align:right">{dv}</b>'
                 f'<div class="pb" style="flex:1;margin:0 .5rem;height:4px"><div class="f" style="width:{pct}%;background:{co}"></div></div>'
-                f'<span style="font-size:.6rem;color:#64748b;min-width:3.5rem;text-align:right">'
-                f'{"not trained" if sm == "PyTorch" and not gnn_ok else f"σ={uv:.3f}"}</span>'
+                f'<span style="font-size:.6rem;color:#64748b;min-width:3.5rem;text-align:right">σ={uv:.3f}</span>'
                 f'</div>', unsafe_allow_html=True)
 
-        # 2. 3-Model Comparison Table
+        # 2. 2-Model Comparison Table
         with st.expander("📊 Multi-Model Selectivity Comparison Table", expanded=True):
             rows = []
+            model_keys = [m for m in ("XGBoost", "RandomForest", "LightGBM", "Stacked") if any(preds.get(m, {}).values())] or ["XGBoost"]
             for s in SUBTYPES:
                 row = {"Subtype": s}
-                for m in ("XGBoost", "RandomForest", "PyTorch"):
+                for m in model_keys:
                     v = preds.get(m, {}).get(s, 0)
                     u = unc.get(m, {}).get(s, 0)
                     val = float(v) if v is not None else 0.0
                     unc_val = float(u) if u is not None else 0.0
-                    col_name = "GNN" if m == "PyTorch" else m
-                    row[col_name] = f"{val:.2f}"
-                    row[f"σ {col_name}"] = f"{unc_val:.3f}" if unc_val > 0 else "—"
+                    row[m] = f"{val:.2f}"
+                    row[f"σ {m}"] = f"{unc_val:.3f}" if unc_val > 0 else "—"
                 rows.append(row)
             df_comp = pd.DataFrame(rows)
             st.dataframe(df_comp.set_index("Subtype"), use_container_width=True)
@@ -401,21 +398,15 @@ def render_single_predict():
             '</div>', unsafe_allow_html=True)
         _render_shap(r, canon)
 
-    # ── Selectivity & Docking ──
-    sel = r.get("selectivity_profile", {}); dock = r.get("docking_scores")
-    if sel or dock:
+    # ── Selectivity Profile ──
+    sel = r.get("selectivity_profile", {})
+    if sel:
         st.markdown(f'<div class="sd"></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="section-header">📌 Selectivity & Docking</div>', unsafe_allow_html=True)
-        n = max(len(sel) + (1 if dock else 0), 1); s_cols = st.columns(n)
-        idx = 0
-        for k2, v2 in sel.items():
+        st.markdown(f'<div class="section-header">📌 Selectivity Profile</div>', unsafe_allow_html=True)
+        s_cols = st.columns(len(sel))
+        for idx, (k2, v2) in enumerate(sel.items()):
             with s_cols[idx]:
                 st.markdown(f'<div class="card" style="text-align:center;padding:.3rem .5rem"><div class="section-header" style="font-size:.6rem;justify-content:center">{k2.replace("_vs_"," vs ")}</div><span style="font-size:1rem;font-weight:700">{v2:.3f}</span></div>', unsafe_allow_html=True)
-            idx += 1
-        if dock:
-            with s_cols[min(idx, n-1)]:
-                ds = dock.get("score", dock)
-                st.markdown(f'<div class="card" style="text-align:center;padding:.3rem .5rem"><div class="section-header" style="font-size:.6rem;justify-content:center">Docking</div><span style="font-size:1rem;font-weight:700">{ds}</span></div>', unsafe_allow_html=True)
 
     render_docking_panel(canon, r.get("best_target", "A2A"))
 
@@ -458,46 +449,26 @@ def render_single_predict():
         _render_similarity_panel(canon)
 
 def _render_similarity_panel(canon):
-    """Top-10 neighbors with cached PDB search."""
-    from src.chem_utils import topk_tanimoto
-    from src.pdb_utils import search_pdb_for_smiles_batch
+    """Top-10 neighbors with PDB lookup using canonical SMILES matching."""
+    from src.chem_utils import topk_tanimoto, lookup_pdb_ids
 
     @st.cache_data(show_spinner=False)
     def _cached_tanimoto(smiles):
         return topk_tanimoto(smiles, k=10)
 
-    @st.cache_data(show_spinner=False)
-    def _cached_pdb_search(smiles_tuple):
-        return search_pdb_for_smiles_batch(list(smiles_tuple))
-
     try:
         _, ts = _cached_tanimoto(canon)
         if ts:
-            top_smiles = [s for s, _ in ts]
-            with st.spinner("Searching RCSB PDB database..."):
-                pdb_results = _cached_pdb_search(tuple(top_smiles))
-            
-            KNOWN_PDB = {
-                "c1nc2c(c1n)ncn2c3c(c(c(c(c3o)co)o)o": [{"pdb_id": "1U0S", "name": "Adenosine deaminase"}],
-                "cn1cnc2c1c(=o)n(c(=o)n2c)c": [{"pdb_id": "1K6A", "name": "Caffeine complex"}],
-                "c1nc2c(c1n)ncn2c3c(c(c(c3o)co)o)": [{"pdb_id": "1U0S", "name": "Adenosine deaminase"}],
-                "cn1c2c(ncn2c(c1=O)N(C)C)n": [{"pdb_id": "2UZM", "name": "Theophylline"}],
-            }
-            for sm_norm, pdbs in KNOWN_PDB.items():
-                if sm_norm in top_smiles and not pdb_results.get(sm_norm):
-                    pdb_results[sm_norm] = pdbs
-            
-            import urllib.parse
-            import json
-            found_any = any(v for v in pdb_results.values())
             for i, (s, t) in enumerate(ts):
-                pdbs = pdb_results.get(s, [])
+                pdbs = lookup_pdb_ids(s)
                 pdb_info = ""
                 if pdbs:
                     pdb_info = " ".join(
-                        f'<a href="https://files.rcsb.org/download/{p["pdb_id"]}.pdb" target="_blank" style="color:#38bdf8;font-size:.55rem;text-decoration:none;border:1px solid rgba(148,163,184,.2);border-radius:3px;padding:0 .25rem;margin:0 .1rem">{p["pdb_id"]}</a>'
+                        f'<a href="https://files.rcsb.org/download/{p["pdb_id"]}.pdb" target="_blank" style="color:#38bdf8;font-size:.55rem;text-decoration:none;border:1px solid rgba(148,163,184,.2);border-radius:3px;padding:0 .25rem;margin:0 .1rem">{p["pdb_id"]} ({p.get("name", p["ccd"])})</a>'
                         for p in pdbs[:3])
                 else:
+                    import urllib.parse
+                    import json
                     req_dict = {
                         "query": {
                             "type": "terminal",
@@ -517,8 +488,6 @@ def _render_similarity_panel(canon):
                     f'<span style="min-width:3rem;text-align:right;color:#94a3b8">{t:.4f}</span>'
                     f'<span style="min-width:4.5rem;text-align:right">{pdb_info}</span>'
                     f'</div>', unsafe_allow_html=True)
-            if not found_any:
-                st.caption("No PDB matches found for these specific structures.")
         else:
             st.caption("No similar molecules found in training set.")
     except Exception as ex:

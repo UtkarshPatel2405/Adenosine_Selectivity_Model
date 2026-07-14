@@ -98,6 +98,50 @@ def _load_rf_models():
     return models
 
 
+@lru_cache(maxsize=1)
+def _load_lgb_models():
+    models = {}
+    for st in SUBTYPES:
+        path = MODELS_DIR / "precise" / f"lgb_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"lgb_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"lgb_precise_{st.lower()}_model.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"lgb_{st.lower()}_model.pkl"
+        if path.exists():
+            try:
+                with open(path, "rb") as f:
+                    models[st] = pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load LightGBM model for %s from %s: %s", st, path, e)
+        else:
+            logger.warning("LightGBM model for %s not found at any path", st)
+    return models
+
+
+@lru_cache(maxsize=1)
+def _load_stack_models():
+    models = {}
+    for st in SUBTYPES:
+        path = MODELS_DIR / "precise" / f"stack_ridge_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"stack_ridge_{st}_production.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"stack_ridge_precise_{st.lower()}_model.pkl"
+        if not path.exists():
+            path = MODELS_DIR / f"stack_ridge_{st.lower()}_model.pkl"
+        if path.exists():
+            try:
+                with open(path, "rb") as f:
+                    models[st] = pickle.load(f)
+            except Exception as e:
+                logger.error("Failed to load Stack model for %s from %s: %s", st, path, e)
+        else:
+            logger.warning("Stack model for %s not found at any path", st)
+    return models
+
+
 def _ensemble_predict(model_ens, x: np.ndarray) -> Tuple[Any, Any, Any, Any]:
     """
     Returns (pred_mean, uncertainty_std_equiv, lower_bound, upper_bound).
@@ -177,6 +221,8 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
         scaler = None
 
     xgb_models = _load_xgb_models()
+    lgb_models = _load_lgb_models()
+    stack_models = _load_stack_models()
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -192,9 +238,9 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
 
     in_db = canon in lookup
 
-    preds = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
-    unc = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
-    intervals = {"XGBoost": {}, "RandomForest": {}, "PyTorch": {}}
+    preds = {"XGBoost": {}, "RandomForest": {}, "LightGBM": {}, "Stacked": {}, "PyTorch": {}}
+    unc = {"XGBoost": {}, "RandomForest": {}, "LightGBM": {}, "Stacked": {}, "PyTorch": {}}
+    intervals = {"XGBoost": {}, "RandomForest": {}, "LightGBM": {}, "Stacked": {}, "PyTorch": {}}
 
 
     x = build_features(canon, scaler) if scaler is not None else None
@@ -202,49 +248,87 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
     source = "database" if in_db else "model"
 
     for st in SUBTYPES:
-        if in_db:
+        # --- XGBoost ---
+        if st in xgb_models and x is not None:
+            m, s, low, high = _ensemble_predict(xgb_models[st], x)
+            preds["XGBoost"][st] = m
+            unc["XGBoost"][st] = s
+            intervals["XGBoost"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+        elif in_db:
             val = lookup[canon].get(st)
             if pd.notna(val) and str(val).lower() != 'nan':
                 p_val = float(val)
-                for model_name in preds:
-                    preds[model_name][st] = p_val
-                    unc[model_name][st] = 0.0
-                    intervals[model_name][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
-            else:
-                for model_name in preds:
-                    preds[model_name][st] = 0.0
-                    unc[model_name][st] = 0.0
-                    intervals[model_name][st] = {"lower": 0.0, "upper": 0.0, "width": 0.0}
-        else:
-            if st in xgb_models and x is not None:
-                m, s, low, high = _ensemble_predict(xgb_models[st], x)
-                preds["XGBoost"][st] = m
-                unc["XGBoost"][st] = s
-                intervals["XGBoost"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+                preds["XGBoost"][st] = p_val
+                unc["XGBoost"][st] = 0.0
+                intervals["XGBoost"][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
             else:
                 preds["XGBoost"][st], unc["XGBoost"][st], intervals["XGBoost"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+        else:
+            preds["XGBoost"][st], unc["XGBoost"][st], intervals["XGBoost"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
-            # Lazy-load RF on demand (avoids 105MB deserialization on cold start)
-            if run_rf:
-                _rf = _load_rf_models()
-                if st in _rf and x is not None:
-                    m, s, low, high = _ensemble_predict(_rf[st], x)
-                    preds["RandomForest"][st] = m
-                    unc["RandomForest"][st] = s
-                    intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+        # --- RandomForest ---
+        if run_rf:
+            _rf = _load_rf_models()
+            if st in _rf and x is not None:
+                m, s, low, high = _ensemble_predict(_rf[st], x)
+                preds["RandomForest"][st] = m
+                unc["RandomForest"][st] = s
+                intervals["RandomForest"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+            elif in_db:
+                val = lookup[canon].get(st)
+                if pd.notna(val) and str(val).lower() != 'nan':
+                    p_val = float(val)
+                    preds["RandomForest"][st] = p_val
+                    unc["RandomForest"][st] = 0.0
+                    intervals["RandomForest"][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
                 else:
                     preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
             else:
                 preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+        else:
+            preds["RandomForest"][st], unc["RandomForest"][st], intervals["RandomForest"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
-            pred_val = _try_gnn_predict(canon, st)
-            if pred_val is not None:
-                m = float(pred_val)
-                preds["PyTorch"][st] = m
-                unc["PyTorch"][st] = 0.0
-                intervals["PyTorch"][st] = {"lower": m, "upper": m, "width": 0.0}
+        # --- LightGBM ---
+        if st in lgb_models and x is not None:
+            m, s, low, high = _ensemble_predict(lgb_models[st], x)
+            preds["LightGBM"][st] = m
+            unc["LightGBM"][st] = s
+            intervals["LightGBM"][st] = {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
+        elif in_db:
+            val = lookup[canon].get(st)
+            if pd.notna(val) and str(val).lower() != 'nan':
+                p_val = float(val)
+                preds["LightGBM"][st] = p_val
+                unc["LightGBM"][st] = 0.0
+                intervals["LightGBM"][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
             else:
-                preds["PyTorch"][st], unc["PyTorch"][st], intervals["PyTorch"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+                preds["LightGBM"][st], unc["LightGBM"][st], intervals["LightGBM"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+        else:
+            preds["LightGBM"][st], unc["LightGBM"][st], intervals["LightGBM"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+
+        # --- Stacked ensemble ---
+        if st in stack_models and x is not None:
+            base_feats = []
+            for mod_name in ("XGBoost", "RandomForest", "LightGBM"):
+                v = preds[mod_name].get(st, 0.0)
+                base_feats.append(v if isinstance(v, (int, float)) else 0.0)
+            meta_x = np.array([base_feats])
+            m = float(stack_models[st].predict(meta_x)[0])
+            preds["Stacked"][st] = round(m, 3)
+            unc["Stacked"][st] = 0.0
+            intervals["Stacked"][st] = {"lower": round(m, 3), "upper": round(m, 3), "width": 0.0}
+        else:
+            preds["Stacked"][st], unc["Stacked"][st], intervals["Stacked"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
+
+        # --- PyTorch / GNN ---
+        pred_val = _try_gnn_predict(canon, st)
+        if pred_val is not None:
+            m = float(pred_val)
+            preds["PyTorch"][st] = m
+            unc["PyTorch"][st] = 0.0
+            intervals["PyTorch"][st] = {"lower": m, "upper": m, "width": 0.0}
+        else:
+            preds["PyTorch"][st], unc["PyTorch"][st], intervals["PyTorch"][st] = 0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0}
 
     selectivity = {}
     pairs = [("A2A", "A1"), ("A2A", "A3")]
@@ -257,8 +341,7 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
     except Exception:
         pass
 
-    xgb_preds = preds["XGBoost"]
-    ref_preds = xgb_preds if sum(xgb_preds.values()) > 0 else preds["PyTorch"]
+    ref_preds = preds["XGBoost"]
 
     return {
         "smiles": canon,

@@ -7,6 +7,7 @@ Now supports ALL 4 subtypes via --all flag.
 import os
 import pickle
 import json
+import logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -18,13 +19,15 @@ import shap
 
 from src.predictor import SUBTYPES
 
+logger = logging.getLogger(__name__)
+
 sns.set_style("whitegrid")
 
 
 def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
-    print(f"\n" + "="*60)
-    print(f"SHAP TREE ANALYSIS FOR {subtype} ({mode} mode)")
-    print("="*60)
+    logger.info("=" * 60)
+    logger.info("SHAP TREE ANALYSIS FOR %s (%s mode)", subtype, mode)
+    logger.info("=" * 60)
     
     # 1. Load trained model
     model_path = Path(f"models/{mode}/xgboost_{subtype}_production.pkl")
@@ -35,10 +38,10 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     if not model_path.exists():
         model_path = Path(f"models/xgboost_precise_{subtype.lower()}_model.pkl")
     if not model_path.exists():
-        print(f"[ERROR] No model found for {subtype}. Complete production retraining first.")
+        logger.error("No model found for %s. Complete production retraining first.", subtype)
         return None
 
-    print(f"[INFO] Loading model from {model_path}")
+    logger.info("Loading model from %s", model_path)
     with open(model_path, "rb") as f:
         model = pickle.load(f)
 
@@ -61,7 +64,7 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     # 2. Load test features and feature names using the saved split
     split_path = Path("data/processed/global_split.json")
     if not split_path.exists():
-        print("[ERROR] Global split missing. Run retrain_production.py first.")
+        logger.error("Global split missing. Run retrain_production.py first.")
         return None
         
     with open(split_path, "r") as f:
@@ -82,7 +85,7 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     
     scaler_path = Path("models/scaler.pkl")
     if not scaler_path.exists():
-        print("[ERROR] Scaler missing.")
+        logger.error("Scaler missing.")
         return None
         
     with open(scaler_path, "rb") as f:
@@ -100,11 +103,11 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
         for i in range(len(feature_names), X_test.shape[1]):
             feature_names.append(f"Feature_{i}")
     
-    print(f"[INFO] Loaded test set with shape: {X_test.shape}")
-    print(f"  Total features: {len(feature_names)}")
+    logger.info("Loaded test set with shape: %s", X_test.shape)
+    logger.info("  Total features: %d", len(feature_names))
     
     # 3. Create TreeExplainer
-    print("[INFO] Initializing SHAP TreeExplainer and calculating SHAP values...")
+    logger.info("Initializing SHAP TreeExplainer and calculating SHAP values...")
     explainer = shap.TreeExplainer(estimator)
     shap_values = explainer(X_test)
     
@@ -119,7 +122,7 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     beeswarm_file = out_dir / f"{subtype}_beeswarm.png"
     plt.savefig(beeswarm_file, dpi=300)
     plt.close()
-    print(f"[SUCCESS] Saved summary beeswarm plot to {beeswarm_file}")
+    logger.info("Saved summary beeswarm plot to %s", beeswarm_file)
     
     # Generate Bar plot
     plt.figure(figsize=(10, 6))
@@ -129,19 +132,19 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     bar_file = out_dir / f"{subtype}_bar.png"
     plt.savefig(bar_file, dpi=300)
     plt.close()
-    print(f"[SUCCESS] Saved summary bar plot to {bar_file}")
+    logger.info("Saved summary bar plot to %s", bar_file)
     
     # Analyze the most important features to perform the Chemical Sanity Check
     mean_abs_shaps = np.abs(shap_values.values).mean(axis=0)
     sorted_indices = np.argsort(mean_abs_shaps)[::-1]
     
     top_features = []
-    print(f"\n[INFO] Chemical Sanity Check - Top 10 Most Important Features for {subtype}:")
+    logger.info("Chemical Sanity Check - Top 10 Most Important Features for %s:", subtype)
     for rank, idx in enumerate(sorted_indices[:10], 1):
         name = feature_names[idx]
         val = mean_abs_shaps[idx]
         top_features.append({"rank": rank, "feature": name, "mean_abs_shap": float(val)})
-        print(f"  {rank}. {name}: {val:.4f}")
+        logger.info("  %d. %s: %.4f", rank, name, val)
         
     # Standard chemical analysis for Adenosine Receptor selectivities
     expected_top = ["AromRings", "HBD", "HBA", "TPSA", "LogP", "MolWt", "NumAromaticRings", "NumHDonors", "NumHAcceptors", "MolLogP"]
@@ -153,7 +156,7 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
         sanity_status = "WARNING"
         sanity_message = "Top features are dominated by isolated fingerprint bits rather than global physicochemical descriptors. Verify model is not learning noise."
         
-    print(f"\n[STATUS] Chemical Sanity for {subtype}: {sanity_status} - {sanity_message}")
+    logger.info("Chemical Sanity for %s: %s - %s", subtype, sanity_status, sanity_message)
     
     report_data = {
         "subtype": subtype,
@@ -168,16 +171,16 @@ def run_shap_analysis(subtype: str = "A2A", mode: str = "precise"):
     
     with open(out_dir / f"{subtype}_shap_report.json", "w") as f:
         json.dump(report_data, f, indent=2)
-    print(f"[SUCCESS] Saved SHAP report to {out_dir}/{subtype}_shap_report.json")
+    logger.info("Saved SHAP report to %s/%s_shap_report.json", out_dir, subtype)
     
     return report_data
 
 
 def run_all_subtypes(mode: str = "precise"):
     """Run SHAP analysis for ALL 4 receptor subtypes."""
-    print("\n" + "="*60)
-    print("SHAP TREE ANALYSIS FOR ALL SUBTYPES")
-    print("="*60)
+    logger.info("=" * 60)
+    logger.info("SHAP TREE ANALYSIS FOR ALL SUBTYPES")
+    logger.info("=" * 60)
     
     all_results = {}
     for st in SUBTYPES:
@@ -196,7 +199,7 @@ def run_all_subtypes(mode: str = "precise"):
     }
     with open(out_dir / "all_subtypes_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"\n[SUCCESS] All-subtype SHAP summary saved to {out_dir / 'all_subtypes_summary.json'}")
+    logger.info("All-subtype SHAP summary saved to %s", out_dir / 'all_subtypes_summary.json')
     
     return all_results
 

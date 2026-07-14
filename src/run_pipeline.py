@@ -47,7 +47,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-retrain", action="store_true", help="Skip production retraining")
-    parser.add_argument("--skip-gnn", action="store_true", help="Skip GNN training")
+    parser.add_argument("--no-skip-gnn", action="store_true", help="Include GNN training (legacy)")
     parser.add_argument("--skip-nested-cv", action="store_true", help="Skip nested CV (uses default params)")
     parser.add_argument("--y-rand-iterations", type=int, default=Y_RAND_ITERATIONS, help="Y-randomization iterations")
     parser.add_argument("--gnn-epochs", type=int, default=GNN_EPOCHS, help="GNN training epochs")
@@ -78,7 +78,7 @@ def main():
         if not args.skip_retrain:
             run_step(["-m", "src.retrain_production"], "Production Model Training & Conformal Prediction (MAPIE)")
 
-        if not args.skip_gnn:
+        if args.no_skip_gnn:
             run_step(
                 ["-m", "src.gnn_model", "--all", "--epochs", str(args.gnn_epochs)],
                 f"GNN Training — All Subtypes ({args.gnn_epochs} epochs)",

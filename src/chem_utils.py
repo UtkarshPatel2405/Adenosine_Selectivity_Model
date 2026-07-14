@@ -212,9 +212,18 @@ def lookup_pdb_ids(smiles: str) -> list[dict]:
     for ccd, info in known.items():
         try:
             known_canon = canonicalize(info.get("smiles", ""))
-            if known_canon and known_canon == canon:
-                for pdb_id in info.get("pdb_ids", []):
-                    hits.append({"pdb_id": pdb_id, "ccd": ccd, "name": info.get("name", "")})
+            # Compare excluding stereochemistry (different chiral notations are still the same molecule)
+            mol_query = Chem.MolFromSmiles(canon)
+            mol_known = Chem.MolFromSmiles(known_canon) if known_canon else None
+            if mol_query is not None and mol_known is not None:
+                # Remove stereochemistry for comparison
+                Chem.RemoveStereochemistry(mol_query)
+                Chem.RemoveStereochemistry(mol_known)
+                canon_query_no_stereo = Chem.MolToSmiles(mol_query, canonical=True)
+                canon_known_no_stereo = Chem.MolToSmiles(mol_known, canonical=True)
+                if canon_query_no_stereo == canon_known_no_stereo:
+                    for pdb_id in info.get("pdb_ids", []):
+                        hits.append({"pdb_id": pdb_id, "ccd": ccd, "name": info.get("name", "")})
         except Exception:
             continue
     return hits
@@ -253,8 +262,16 @@ def topk_tanimoto(smiles: str, k: int = 10) -> tuple[Optional[str], list[tuple[s
     except FileNotFoundError:
         return canon, []
     sims = DataStructs.BulkTanimotoSimilarity(qfp, train_fps)
-    idx = np.argsort(sims)[::-1][:k]
-    top = [(train_smiles[i], float(sims[i])) for i in idx]
+    idx = np.argsort(sims)[::-1]
+    seen = set()
+    top = []
+    for i in idx:
+        smi = train_smiles[i]
+        if smi not in seen:
+            seen.add(smi)
+            top.append((smi, float(sims[i])))
+            if len(top) >= k:
+                break
     return canon, top
 
 def generate_pdb_block(smiles: str) -> Optional[str]:

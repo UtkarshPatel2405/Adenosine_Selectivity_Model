@@ -145,19 +145,45 @@ CURATED_DESCRIPTORS_LIST = [
     # 1. Basic Physicochemical Properties
     "MolWt", "ExactMolWt", "HeavyAtomCount", "HeavyAtomMolWt",
     "MolLogP", "MolMR", "TPSA", "LabuteASA",
-    
+
     # 2. Hydrogen Bonding & Charge polarities
     "NumHDonors", "NumHAcceptors", "NumRotatableBonds", "FractionCSP3",
     "MaxAbsPartialCharge", "MaxPartialCharge", "MinAbsPartialCharge", "MinPartialCharge",
-    
+
     # 3. Structural Rings & Heteroatoms
     "RingCount", "NumAromaticRings", "NumAliphaticRings", "NumSaturatedRings",
     "NumAromaticCarbocycles", "NumAromaticHeterocycles", "NumAliphaticCarbocycles", "NumAliphaticHeterocycles",
     "NumHeteroatoms", "NumValenceElectrons",
-    
+
     # 4. Core topological descriptors (widely-validated in QSAR)
     "BalabanJ", "BertzCT", "HallKierAlpha", "Kappa1", "Kappa2", "Kappa3",
-    "Chi0n", "Chi0v", "Chi1n", "Chi1v", "Chi2n", "Chi2v", "Chi3n", "Chi3v", "Chi4n", "Chi4v"
+    "Chi0n", "Chi0v", "Chi1n", "Chi1v", "Chi2n", "Chi2v", "Chi3n", "Chi3v", "Chi4n", "Chi4v",
+
+    # 5. EState indices — electrotopological state (key for GPCR binding interactions)
+    "EState_VSA1", "EState_VSA2", "EState_VSA3", "EState_VSA4", "EState_VSA5",
+    "EState_VSA6", "EState_VSA7", "EState_VSA8", "EState_VSA9", "EState_VSA10", "EState_VSA11",
+    "MaxAbsEStateIndex", "MaxEStateIndex", "MinAbsEStateIndex", "MinEStateIndex",
+
+    # 6. VSA descriptors — surface area partitioned by logP/charge
+    # (SlogP_VSA = Wildman-Crippen logP contribution per surface area bin)
+    "SlogP_VSA1", "SlogP_VSA2", "SlogP_VSA3", "SlogP_VSA4", "SlogP_VSA5",
+    "SlogP_VSA6", "SlogP_VSA7", "SlogP_VSA8", "SlogP_VSA9", "SlogP_VSA10",
+    "SlogP_VSA11", "SlogP_VSA12",
+
+    # 7. SMR_VSA — molar refractivity per surface area (polarizability profile)
+    "SMR_VSA1", "SMR_VSA2", "SMR_VSA3", "SMR_VSA4", "SMR_VSA5",
+    "SMR_VSA6", "SMR_VSA7", "SMR_VSA8", "SMR_VSA9", "SMR_VSA10",
+
+    # 8. PEOE_VSA — partial equalization of orbital electronegativity per surface area
+    # (charge distribution on molecular surface — critical for electrostatic receptor interactions)
+    "PEOE_VSA1", "PEOE_VSA2", "PEOE_VSA3", "PEOE_VSA4", "PEOE_VSA5",
+    "PEOE_VSA6", "PEOE_VSA7", "PEOE_VSA8", "PEOE_VSA9", "PEOE_VSA10",
+    "PEOE_VSA11", "PEOE_VSA12", "PEOE_VSA13", "PEOE_VSA14",
+
+    # 9. Additional validated QSAR descriptors
+    "NHOHCount", "NOCount",  # Nitrogen/oxygen counts (GPCR-relevant heteroatoms)
+    "NumRadicalElectrons",
+    "qed",  # Quantitative Estimate of Drug-likeness
 ]
 
 
@@ -181,6 +207,12 @@ for name in CURATED_DESCRIPTORS_LIST:
     func = getattr(Descriptors, name, None)
     if func is None:
         func = getattr(Lipinski, name, None)
+    if func is None and name == "qed":
+        try:
+            from rdkit.Chem.QED import qed as _qed_func
+            func = _qed_func
+        except ImportError:
+            pass
     _DESC_FUNCS[name] = func
 
 

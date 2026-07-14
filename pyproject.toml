@@ -16,6 +16,7 @@ dependencies = [
     "pandas",
     "scikit-learn",
     "xgboost",
+    "lightgbm",
     "rdkit",
     "plotly",
     "matplotlib",
@@ -28,6 +29,8 @@ dependencies = [
     "numba>=0.60.0",
     "llvmlite>=0.43.0",
     "python-dotenv",
+    "requests",
+    "openpyxl",
 ]
 
 [project.optional-dependencies]

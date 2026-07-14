@@ -139,17 +139,19 @@ def load_and_clean(
     post_filter_count = len(df)
     logger.info("Scientific filters: %d raw rows -> %d high-quality rows.", initial_count, post_filter_count)
 
+    # Vectorized known_targets building (replaces iterrows)
     known_targets = {}
-    for _, row in df.iterrows():
-        smi = row["canonical_smiles"]
-        hits = str(row.get("targets_hit", ""))
+    _hits_col = df["targets_hit"].fillna("").astype(str)
+    _tag_col = df["TAG"].astype(str)
+    _smi_col = df["canonical_smiles"]
+    for smi, hits, tag in zip(_smi_col.values, _hits_col.values, _tag_col.values):
         subtypes = set()
         for hit in hits.split(";"):
             hit = hit.strip()
             if hit in SUBTYPE_MAP:
                 subtypes.add(SUBTYPE_MAP[hit])
-        if row["TAG"] in SUBTYPE_MAP:
-            subtypes.add(SUBTYPE_MAP[row["TAG"]])
+        if tag in SUBTYPE_MAP:
+            subtypes.add(SUBTYPE_MAP[tag])
         if smi not in known_targets:
             known_targets[smi] = set()
         known_targets[smi].update(subtypes)
@@ -186,12 +188,13 @@ def load_and_clean(
     logger.info("Unique molecular barcodes: %d", n_unique_barcodes)
     logger.info("Collapse stats: mean shift=%.3f, max shift=%.3f", mean_shift, max_shift)
 
-    lookup = {}
-    for smi, subdf in df_deduped.groupby("canonical_smiles"):
-        lookup[smi] = {
-            row["target_subtype"]: float(row["pchembl_value"])
-            for _, row in subdf.iterrows()
-        }
+    # Vectorized lookup building (replaces iterrows)
+    lookup = (
+        df_deduped.groupby("canonical_smiles")
+        .apply(lambda g: dict(zip(g["target_subtype"], g["pchembl_value"].astype(float))),
+               include_groups=False)
+        .to_dict()
+    )
 
     if include_decoys:
         logger.info("Loading P2Y structural decoys...")
@@ -201,33 +204,33 @@ def load_and_clean(
         if p2y_path.exists():
             logger.info("Ingesting P2Y decoys from %s", p2y_path)
             p2y_df = pd.read_csv(p2y_path)
-            p2y_count = 0
-            for _, row in p2y_df.iterrows():
-                smiles = row["canonical_smiles"]
-                barcode, _ = registry.register(smiles)
+            # Vectorized barcode registration
+            barcodes = [registry.register(s)[0] for s in p2y_df["canonical_smiles"].values]
+            # Vectorized decoy row construction via cross-join
+            for idx, (smi, bc) in enumerate(zip(p2y_df["canonical_smiles"].values, barcodes)):
                 for sub in SUBTYPES:
                     decoy_rows.append({
                         "TAG": f"{sub}R",
-                        "canonical_smiles": smiles,
+                        "canonical_smiles": smi,
                         "pchembl_value": DECOY_PCHEMBL,
                         "target_subtype": sub,
                         "standard_type": "DECOY_P2Y",
-                        "barcode": barcode,
+                        "barcode": bc,
                     })
-                    p2y_count += 1
-            logger.info("Ingested %d P2Y structural decoy rows.", p2y_count)
+            logger.info("Ingested %d P2Y structural decoy rows.", len(decoy_rows))
 
         if decoy_rows:
             decoy_df = pd.DataFrame(decoy_rows)
             df_deduped = pd.concat([df_deduped, decoy_df], ignore_index=True)
             logger.info("Total decoy rows after concat: %d", len(decoy_df))
 
-            lookup = {}
-            for smi, subdf in df_deduped.groupby("canonical_smiles"):
-                lookup[smi] = {
-                    row["target_subtype"]: float(row["pchembl_value"])
-                    for _, row in subdf.iterrows()
-                }
+            # Vectorized lookup rebuild after decoy concat
+            lookup = (
+                df_deduped.groupby("canonical_smiles")
+                .apply(lambda g: dict(zip(g["target_subtype"], g["pchembl_value"].astype(float))),
+                       include_groups=False)
+                .to_dict()
+            )
 
     registry.save()
     logger.info("SMILES barcode registry saved (%d molecules).", len(registry))

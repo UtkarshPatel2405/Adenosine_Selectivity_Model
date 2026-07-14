@@ -7,9 +7,16 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import lightgbm as lgb
 import xgboost as xgb
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error
+
+
+class AverageEnsemble:
+    """Equal-weight average of base model predictions. Pickle-friendly."""
+    def predict(self, X):
+        return np.mean(X, axis=1)
 
 from src.data_loader import load_and_clean
 from src.features import build_feature_matrix, build_features
@@ -25,15 +32,98 @@ from src.config import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_PARAMS = {
-    "A1": {"n_estimators": 500, "max_depth": 5, "learning_rate": 0.05,
-           "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 2},
-    "A2A": {"n_estimators": 800, "max_depth": 6, "learning_rate": 0.05,
-            "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 2},
-    "A2B": {"n_estimators": 600, "max_depth": 5, "learning_rate": 0.05,
-            "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 2},
-    "A3": {"n_estimators": 800, "max_depth": 7, "learning_rate": 0.05,
-           "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 2},
+    "A1": {"n_estimators": 800, "max_depth": 6, "learning_rate": 0.03,
+           "subsample": 0.8, "colsample_bytree": 0.7, "min_child_weight": 3,
+           "reg_alpha": 0.1, "reg_lambda": 1.5, "gamma": 0.1},
+    "A2A": {"n_estimators": 1000, "max_depth": 7, "learning_rate": 0.03,
+            "subsample": 0.8, "colsample_bytree": 0.7, "min_child_weight": 2,
+            "reg_alpha": 0.05, "reg_lambda": 1.0, "gamma": 0.05},
+    "A2B": {"n_estimators": 800, "max_depth": 6, "learning_rate": 0.03,
+            "subsample": 0.8, "colsample_bytree": 0.7, "min_child_weight": 2,
+            "reg_alpha": 0.1, "reg_lambda": 1.0, "gamma": 0.05},
+    "A3": {"n_estimators": 1000, "max_depth": 7, "learning_rate": 0.03,
+           "subsample": 0.8, "colsample_bytree": 0.7, "min_child_weight": 2,
+           "reg_alpha": 0.05, "reg_lambda": 1.0, "gamma": 0.05},
 }
+
+LGBM_DEFAULT_PARAMS = {
+    "A1": {"n_estimators": 800, "max_depth": 6, "learning_rate": 0.03, "num_leaves": 40,
+           "subsample": 0.8, "colsample_bytree": 0.7, "min_child_samples": 10,
+           "reg_alpha": 0.1, "reg_lambda": 1.5},
+    "A2A": {"n_estimators": 1000, "max_depth": 7, "learning_rate": 0.03, "num_leaves": 50,
+            "subsample": 0.8, "colsample_bytree": 0.7, "min_child_samples": 5,
+            "reg_alpha": 0.05, "reg_lambda": 1.0},
+    "A2B": {"n_estimators": 800, "max_depth": 6, "learning_rate": 0.03, "num_leaves": 40,
+            "subsample": 0.8, "colsample_bytree": 0.7, "min_child_samples": 5,
+            "reg_alpha": 0.1, "reg_lambda": 1.0},
+    "A3": {"n_estimators": 1000, "max_depth": 7, "learning_rate": 0.03, "num_leaves": 50,
+           "subsample": 0.8, "colsample_bytree": 0.7, "min_child_samples": 5,
+           "reg_alpha": 0.05, "reg_lambda": 1.0},
+}
+
+
+def _run_optuna_hpo(X_tr, y_tr, smiles_tr, subtype: str, n_trials: int = 30) -> dict:
+    """
+    Optuna HPO with 3-fold Scaffold-Grouped Cross-Validation (GroupKFold).
+    Ensures that validation folds contain completely unseen scaffolds,
+    forcing Optuna to optimize for scaffold generalizability rather than memorization.
+    """
+    try:
+        import optuna
+        from sklearn.model_selection import GroupKFold
+        from src.scaffold_split import _murcko_scaffold_smiles
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+    except ImportError:
+        logger.warning("Required modules for Scaffold HPO not available. Using default params.")
+        return DEFAULT_PARAMS[subtype]
+
+    # Compute scaffold for each molecule in the training set
+    logger.info("  Computing Murcko scaffolds for GroupKFold HPO...")
+    scaffolds = [str(_murcko_scaffold_smiles(smi)) for smi in smiles_tr]
+    
+    # Map scaffold strings to unique integer group IDs
+    unique_scaf = list(set(scaffolds))
+    scaf_to_id = {scaf: idx for idx, scaf in enumerate(unique_scaf)}
+    groups = np.array([scaf_to_id[scaf] for scaf in scaffolds])
+
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 300, 1200),
+            # Restrict depth to promote generalization (scaffold-robust trees are shallower)
+            "max_depth": trial.suggest_int("max_depth", 3, 6),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.08, log=True),
+            "subsample": trial.suggest_float("subsample", 0.7, 0.9),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.8),
+            "min_child_weight": trial.suggest_int("min_child_weight", 2, 8),
+            # High L1/L2 regularization to control fingerprint overfitting
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.05, 2.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1.0, 5.0),
+            "gamma": trial.suggest_float("gamma", 0.0, 0.4),
+            "tree_method": "hist",
+            "n_jobs": 1,  # Prevent OpenMP deadlock on Windows background runner
+            "random_state": 42,
+        }
+        
+        # 3-fold GroupKFold by scaffold
+        gkf = GroupKFold(n_splits=3)
+        scores = []
+        for train_idx, val_idx in gkf.split(X_tr, y_tr, groups=groups):
+            X_fold_tr, y_fold_tr = X_tr[train_idx], y_tr[train_idx]
+            X_fold_val, y_fold_val = X_tr[val_idx], y_tr[val_idx]
+            
+            model = xgb.XGBRegressor(**params)
+            model.fit(X_fold_tr, y_fold_tr)
+            preds = model.predict(X_fold_val)
+            scores.append(r2_score(y_fold_val, preds))
+            
+        return float(np.mean(scores))
+
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=42))
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+    best = study.best_params
+    logger.info("  HPO %s (Scaffold CV): best CV R²=%.4f, params=%s", subtype, study.best_value, best)
+    return best
 
 
 def retrain_production_models(data_path: str = "data/raw"):
@@ -55,6 +145,7 @@ def retrain_production_models(data_path: str = "data/raw"):
 
     cv_report_path = OUTPUTS_DIR / "nested_cv" / "merged_report.json"
     best_params_per_subtype = {}
+    run_hpo = False
 
     if cv_report_path.exists():
         logger.info("Found Nested CV report at %s. Loading HPO params...", cv_report_path)
@@ -65,8 +156,8 @@ def retrain_production_models(data_path: str = "data/raw"):
                 best_params_per_subtype[st] = cv_data[st]["median_params"]
                 logger.info("  %s: %s", st, best_params_per_subtype[st])
     else:
-        logger.info("No Nested CV HPO params found. Using scientific fallbacks.")
-        best_params_per_subtype = DEFAULT_PARAMS
+        logger.info("No Nested CV HPO params found. Will run Optuna HPO per subtype.")
+        run_hpo = True  # Defer to per-subtype HPO after data loading
 
     df, _ = load_and_clean(data_path, mode="precise", include_decoys=True)
     df = df.rename(columns={"canonical_smiles": "smiles"})
@@ -90,12 +181,13 @@ def retrain_production_models(data_path: str = "data/raw"):
     train_df = df[df["smiles"].isin(train_smiles)].reset_index(drop=True)
     test_df = df[df["smiles"].isin(test_smiles)].reset_index(drop=True)
 
-    train_lookup = {}
-    for smi, subdf in train_df.groupby("smiles"):
-        train_lookup[smi] = {
-            row["target_subtype"]: float(row["pchembl_value"])
-            for _, row in subdf.iterrows()
-        }
+    # Vectorized train_lookup building (replaces iterrows)
+    train_lookup = (
+        train_df.groupby("smiles")
+        .apply(lambda g: dict(zip(g["target_subtype"], g["pchembl_value"].astype(float))),
+               include_groups=False)
+        .to_dict()
+    )
     train_lookup_path = PROCESSED_DATA_DIR / "db_lookup_train.json"
     with open(train_lookup_path, "w") as f:
         json.dump(train_lookup, f, indent=2, sort_keys=True)
@@ -140,12 +232,17 @@ def retrain_production_models(data_path: str = "data/raw"):
 
         logger.info("  Samples: train=%d, test=%d", len(y_tr), len(y_te))
 
+        if run_hpo and st not in best_params_per_subtype:
+            logger.info("  Running Optuna HPO for %s (30 trials, 3-fold Scaffold CV)...", st)
+            best_params_per_subtype[st] = _run_optuna_hpo(X_tr, y_tr, train_df.loc[train_mask, "smiles"].values, st, n_trials=30)
+        elif st not in best_params_per_subtype:
+            best_params_per_subtype[st] = DEFAULT_PARAMS[st]
+
         params = best_params_per_subtype[st].copy()
-        params.update({"tree_method": "hist", "n_jobs": 2, "random_state": 42})
+        params.update({"tree_method": "hist", "n_jobs": 1, "random_state": 42})
         logger.info("  Params: %s", params)
 
         base_xgb = xgb.XGBRegressor(**params)
-        base_xgb.fit(X_tr, y_tr)
 
         logger.info("  Wrapping XGBoost with MAPIE CrossConformalRegressor...")
         try:
@@ -165,7 +262,7 @@ def retrain_production_models(data_path: str = "data/raw"):
             max_depth=RF_MAX_DEPTH,
             max_features=RF_MAX_FEATURES,
             random_state=42,
-            n_jobs=2,
+            n_jobs=1,
         )
         logger.info("  Wrapping RandomForest with MAPIE CrossConformalRegressor...")
         try:
@@ -181,19 +278,51 @@ def retrain_production_models(data_path: str = "data/raw"):
             rf_model = rf_base
             rf_model.fit(X_tr, y_tr)
 
+        # ── LightGBM ──
+        lgb_params = LGBM_DEFAULT_PARAMS[st].copy()
+        lgb_params.update({"verbosity": -1, "random_state": 42, "n_jobs": 1})
+        base_lgb = lgb.LGBMRegressor(**lgb_params)
+        logger.info("  Wrapping LightGBM with MAPIE CrossConformalRegressor...")
+        try:
+            lgb_model = train_conformal_model(
+                base_model=base_lgb,
+                X_train=X_tr,
+                y_train=y_tr,
+                cv=MAPIE_CV_FOLDS,
+            )
+            logger.info("  LightGBM Conformal wrapping succeeded.")
+        except Exception as e:
+            logger.warning("  LightGBM Conformal wrapping failed (%s). Saving raw model.", e)
+            lgb_model = base_lgb
+            lgb_model.fit(X_tr, y_tr)
+
+        # ── Predictions ──
         preds_tr_xgb = conformal_model.predict(X_tr) if hasattr(conformal_model, 'predict') else base_xgb.predict(X_tr)
         preds_te_xgb = conformal_model.predict(X_te) if hasattr(conformal_model, 'predict') else base_xgb.predict(X_te)
 
         preds_tr_rf = rf_model.predict(X_tr)
         preds_te_rf = rf_model.predict(X_te)
 
+        preds_tr_lgb = lgb_model.predict(X_tr)
+        preds_te_lgb = lgb_model.predict(X_te)
+
+        # ── Simple average ensemble (more robust than learned meta-model on small data) ──
+        preds_tr_stack = (preds_tr_xgb + preds_tr_rf + preds_tr_lgb) / 3.0
+        preds_te_stack = (preds_te_xgb + preds_te_rf + preds_te_lgb) / 3.0
+
         r2_tr_xgb = r2_score(y_tr, preds_tr_xgb)
         r2_te_xgb = r2_score(y_te, preds_te_xgb)
         r2_tr_rf = r2_score(y_tr, preds_tr_rf)
         r2_te_rf = r2_score(y_te, preds_te_rf)
+        r2_tr_lgb = r2_score(y_tr, preds_tr_lgb)
+        r2_te_lgb = r2_score(y_te, preds_te_lgb)
+        r2_tr_stack = r2_score(y_tr, preds_tr_stack)
+        r2_te_stack = r2_score(y_te, preds_te_stack)
 
-        logger.info("    XGBoost R2: train=%.3f, test=%.3f", r2_tr_xgb, r2_te_xgb)
-        logger.info("    RF R2: train=%.3f, test=%.3f", r2_tr_rf, r2_te_rf)
+        logger.info("    XGBoost  R2: train=%.3f, test=%.3f", r2_tr_xgb, r2_te_xgb)
+        logger.info("    RF       R2: train=%.3f, test=%.3f", r2_tr_rf, r2_te_rf)
+        logger.info("    LightGBM R2: train=%.3f, test=%.3f", r2_tr_lgb, r2_te_lgb)
+        logger.info("    Stack    R2: train=%.3f, test=%.3f", r2_tr_stack, r2_te_stack)
 
         xgb_path = models_precise_dir / f"xgboost_{st}_production.pkl"
         with open(xgb_path, "wb") as f:
@@ -203,11 +332,22 @@ def retrain_production_models(data_path: str = "data/raw"):
         with open(rf_path, "wb") as f:
             pickle.dump(rf_model, f)
 
+        lgb_path = models_precise_dir / f"lgb_{st}_production.pkl"
+        with open(lgb_path, "wb") as f:
+            pickle.dump(lgb_model, f)
+
+        stack_model = AverageEnsemble()
+        stack_path = models_precise_dir / f"stack_ridge_{st}_production.pkl"
+        with open(stack_path, "wb") as f:
+            pickle.dump(stack_model, f)
+
         training_summary[st] = {
             "train_size": int(len(y_tr)),
             "test_size": int(len(y_te)),
             "xgboost_r2": r2_te_xgb,
             "rf_r2": r2_te_rf,
+            "lgbm_r2": r2_te_lgb,
+            "stack_r2": r2_te_stack,
             "conformal_wrapped": str(type(conformal_model).__name__),
         }
         logger.info("  Saved XGBoost model (type=%s) to %s", type(conformal_model).__name__, xgb_path)
@@ -217,6 +357,12 @@ def retrain_production_models(data_path: str = "data/raw"):
 
         shutil.copy(rf_path, MODELS_DIR / f"rf_precise_{st.lower()}_model.pkl")
         shutil.copy(rf_path, MODELS_DIR / f"rf_{st.lower()}_model.pkl")
+
+        shutil.copy(lgb_path, MODELS_DIR / f"lgb_precise_{st.lower()}_model.pkl")
+        shutil.copy(lgb_path, MODELS_DIR / f"lgb_{st.lower()}_model.pkl")
+
+        shutil.copy(stack_path, MODELS_DIR / f"stack_ridge_precise_{st.lower()}_model.pkl")
+        shutil.copy(stack_path, MODELS_DIR / f"stack_ridge_{st.lower()}_model.pkl")
 
     from src.run_id import save_with_run_id
 
