@@ -2,6 +2,8 @@
 
 **Publication-grade machine learning platform for predicting pChEMBL binding affinity and subtype selectivity across human adenosine receptors A<sub>1</sub>, A<sub>2A</sub>, A<sub>2B</sub>, A<sub>3</sub> from SMILES strings.**
 
+Live webapp: https://adenosineselectivitymodel-hmuazpqwqokyvtsgzvn2tq.streamlit.app/
+
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.35+-red)
