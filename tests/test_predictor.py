@@ -26,9 +26,4 @@ class TestLoadScaler:
         assert hasattr(scaler, 'transform'), "Scaler should have transform method"
 
 
-class TestDescriptorsDirect:
-    def test_descriptors_from_predictor(self):
-        from src.features import _descriptors
-        desc = _descriptors("CCO")
-        assert len(desc) == 7
-        assert desc[0] > 0  # MW
+

@@ -7,7 +7,7 @@ Hard-coded reference performance from peer-reviewed publications for transparent
 import json
 from pathlib import Path
 
-SUBTYPES = ["A1", "A2A", "A2B", "A3"]
+from src.config import SUBTYPES
 
 # Published adenosine receptor QSAR benchmark data
 # NOTE: Metrics are approximate consensus values from multiple peer-reviewed sources.

@@ -13,6 +13,8 @@ from typing import Optional
 
 from rdkit import Chem
 
+from src.chem_utils import canonicalize
+
 
 _DEFAULT_REGISTRY_PATH = Path("data/processed/smiles_registry.json")
 
@@ -33,12 +35,7 @@ class SmilesRegistry:
     @staticmethod
     def canonicalize(smiles: str) -> Optional[str]:
         """Canonicalize SMILES via RDKit. Returns None if invalid."""
-        if not isinstance(smiles, str) or not smiles.strip():
-            return None
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        return Chem.MolToSmiles(mol, canonical=True)
+        return canonicalize(smiles)
 
     @staticmethod
     def generate_barcode(canonical_smiles: str) -> str:
@@ -75,47 +72,6 @@ class SmilesRegistry:
     def lookup_smiles(self, barcode: str) -> Optional[str]:
         """Get canonical SMILES from a barcode."""
         return self._barcode_to_smiles.get(barcode)
-
-    def check_duplicates(self, smiles_list: list[str]) -> dict:
-        """
-        Analyze a list of SMILES for duplicates using barcodes.
-        Returns:
-          - unique_barcodes: set of unique barcodes
-          - duplicate_indices: list of (index, barcode) for duplicates
-          - dedup_map: {barcode: [list of original indices]}
-          - stats: summary dict
-        """
-        dedup_map: dict[str, list[int]] = {}
-        invalid_indices: list[int] = []
-
-        for idx, smi in enumerate(smiles_list):
-            canon = self.canonicalize(smi)
-            if canon is None:
-                invalid_indices.append(idx)
-                continue
-            barcode = self.generate_barcode(canon)
-            dedup_map.setdefault(barcode, []).append(idx)
-
-        duplicate_indices = []
-        for barcode, indices in dedup_map.items():
-            if len(indices) > 1:
-                for i in indices[1:]:
-                    duplicate_indices.append((i, barcode))
-
-        unique_barcodes = set(dedup_map.keys())
-
-        return {
-            "unique_barcodes": unique_barcodes,
-            "duplicate_indices": duplicate_indices,
-            "dedup_map": dedup_map,
-            "invalid_indices": invalid_indices,
-            "stats": {
-                "total_input": len(smiles_list),
-                "unique_molecules": len(unique_barcodes),
-                "duplicate_rows": len(duplicate_indices),
-                "invalid_smiles": len(invalid_indices),
-            },
-        }
 
     def get_registry_stats(self) -> dict:
         """Summary statistics of the current registry."""
@@ -170,10 +126,6 @@ if __name__ == "__main__":
     assert new1 is True
     assert new2 is False
     print(f"[PASS] Barcode dedup works. Barcode for ethanol: {b1}")
-
-    # Test batch duplicate detection
-    dupes = reg.check_duplicates(["CCO", "OCC", "c1ccccc1", "CCO", "INVALID"])
-    print(f"[PASS] Duplicate check: {dupes['stats']}")
 
     reg.save()
     print(f"[PASS] Registry saved to {reg.path}")

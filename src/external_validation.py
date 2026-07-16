@@ -14,15 +14,9 @@ from rdkit import Chem
 
 from src.smiles_registry import SmilesRegistry
 from src.predictor import predict, SUBTYPES
+from src.chem_utils import canonicalize as _canonicalize
 
 
-def _canonicalize(smiles: str):
-    if not isinstance(smiles, str) or not smiles.strip():
-        return None
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    return Chem.MolToSmiles(mol, canonical=True)
 
 
 def prepare_external_test_set(

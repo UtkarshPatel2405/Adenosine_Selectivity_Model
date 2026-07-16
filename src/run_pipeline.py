@@ -61,7 +61,7 @@ def main():
         "run_id": RUN_ID,
         "timestamp": RUN_TIMESTAMP,
         "skip_retrain": args.skip_retrain,
-        "skip_gnn": args.skip_gnn,
+        "skip_gnn": not args.no_skip_gnn,
         "y_rand_iterations": args.y_rand_iterations,
         "gnn_epochs": args.gnn_epochs,
     }

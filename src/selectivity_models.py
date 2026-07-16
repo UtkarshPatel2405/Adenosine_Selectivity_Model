@@ -118,7 +118,7 @@ def build_selectivity_models(data_path: str = "data/raw", min_paired: int = None
         # 6. Evaluate
         preds = model.predict(X_test)
         r2 = float(r2_score(y_test, preds))
-        mae = float(np.mean(np.abs(y_test - preds)))
+        mae = float(mean_absolute_error(y_test, preds))
         rmse = float(np.sqrt(np.mean((y_test - preds) ** 2)))
 
         logger.info("  Evaluation Results for %s:", pair_name)

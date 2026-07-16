@@ -7,6 +7,7 @@ import pandas as pd
 from rdkit import Chem
 
 from src.smiles_registry import SmilesRegistry
+from src.chem_utils import canonicalize as _canonicalize_smiles
 from src.config import (
     RAW_DATA_DIR, PROCESSED_DATA_DIR, SUBTYPES, VALID_STANDARD_TYPES,
     REQUIRED_CONFIDENCE, DECOY_PCHEMBL, LOG_LEVEL,
@@ -21,13 +22,6 @@ SUBTYPE_MAP = {
 }
 
 
-def _canonicalize_smiles(smiles: str) -> str | None:
-    if not isinstance(smiles, str) or not smiles.strip():
-        return None
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    return Chem.MolToSmiles(mol, canonical=True)
 
 
 def load_all_raw_data(data_dir: str | Path) -> pd.DataFrame:

@@ -352,17 +352,7 @@ def retrain_production_models(data_path: str = "data/raw"):
         }
         logger.info("  Saved XGBoost model (type=%s) to %s", type(conformal_model).__name__, xgb_path)
 
-        shutil.copy(xgb_path, MODELS_DIR / f"xgboost_precise_{st.lower()}_model.pkl")
-        shutil.copy(xgb_path, MODELS_DIR / f"xgboost_{st.lower()}_model.pkl")
 
-        shutil.copy(rf_path, MODELS_DIR / f"rf_precise_{st.lower()}_model.pkl")
-        shutil.copy(rf_path, MODELS_DIR / f"rf_{st.lower()}_model.pkl")
-
-        shutil.copy(lgb_path, MODELS_DIR / f"lgb_precise_{st.lower()}_model.pkl")
-        shutil.copy(lgb_path, MODELS_DIR / f"lgb_{st.lower()}_model.pkl")
-
-        shutil.copy(stack_path, MODELS_DIR / f"stack_ridge_precise_{st.lower()}_model.pkl")
-        shutil.copy(stack_path, MODELS_DIR / f"stack_ridge_{st.lower()}_model.pkl")
 
     from src.run_id import save_with_run_id
 

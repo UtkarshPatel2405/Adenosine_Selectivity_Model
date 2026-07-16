@@ -10,34 +10,16 @@ import optuna
 
 from src.data_loader import load_and_clean
 from src.features import build_feature_matrix, build_features
+from src.config import SUBTYPES
 
 # Suppress Optuna logging to keep output clean
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-SUBTYPES = ["A1", "A2A", "A2B", "A3"]
-
-def get_outer_folds(df: pd.DataFrame, n_splits: int = 5, random_state: int = 42):
+def _get_scaffold_folds(df: pd.DataFrame, smiles_col: str = "canonical_smiles",
+                        n_splits: int = 5, random_state: int = 42):
+    """Group indices by Murcko scaffold and distribute round-robin into folds."""
     from src.scaffold_split import _murcko_scaffold_smiles
-    scaffolds = df["canonical_smiles"].apply(_murcko_scaffold_smiles).values
-    
-    scaffold_to_indices = {}
-    for idx, scaf in enumerate(scaffolds):
-        scaffold_to_indices.setdefault(scaf, []).append(idx)
-        
-    import random
-    rng = random.Random(random_state)
-    scaf_keys = sorted(list(scaffold_to_indices.keys()))
-    rng.shuffle(scaf_keys)
-    
-    folds_indices = [[] for _ in range(n_splits)]
-    for idx_k, scaf in enumerate(scaf_keys):
-        folds_indices[idx_k % n_splits].extend(scaffold_to_indices[scaf])
-        
-    return folds_indices
-
-def get_inner_folds(train_df: pd.DataFrame, n_splits: int = 3, random_state: int = 100):
-    from src.scaffold_split import _murcko_scaffold_smiles
-    scaffolds = train_df["smiles"].apply(_murcko_scaffold_smiles).values
+    scaffolds = df[smiles_col].apply(_murcko_scaffold_smiles).values
     
     scaffold_to_indices = {}
     for idx, scaf in enumerate(scaffolds):
@@ -70,7 +52,7 @@ def run_fold(subtype: str, fold: int, trials: int = 20, data_path: str = "data/r
     df_st = df_st.rename(columns={"canonical_smiles": "smiles"})
     
     # 2. Get deterministic outer folds
-    outer_folds = get_outer_folds(df_st, n_splits=5, random_state=42)
+    outer_folds = _get_scaffold_folds(df_st, smiles_col="smiles", n_splits=5, random_state=42)
     test_idx = outer_folds[fold - 1]
     train_idx = []
     for f in range(5):
@@ -88,7 +70,7 @@ def run_fold(subtype: str, fold: int, trials: int = 20, data_path: str = "data/r
     y_test = test_df["pchembl_value"].values
     
     # 4. Optuna HPO Inner Loop (3-fold scaffold split CV)
-    inner_folds = get_inner_folds(train_df, n_splits=3, random_state=100 + fold)
+    inner_folds = _get_scaffold_folds(train_df, smiles_col="smiles", n_splits=3, random_state=100 + fold)
     
     def objective(trial):
         params = {

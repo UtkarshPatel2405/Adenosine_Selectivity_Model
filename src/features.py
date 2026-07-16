@@ -109,11 +109,6 @@ class FeaturePipeline:
         X_desc_filtered = self.feature_filter.transform(X_desc)
         X_desc_scaled = self.scaler.transform(X_desc_filtered)
         return X_desc_scaled
-        
-    def __getattr__(self, name):
-        if name.startswith('__') or 'scaler' not in self.__dict__:
-            raise AttributeError(f"'FeaturePipeline' object has no attribute '{name}'")
-        return getattr(self.scaler, name)
 
 
 @lru_cache(maxsize=128)
@@ -187,21 +182,6 @@ CURATED_DESCRIPTORS_LIST = [
 ]
 
 
-@lru_cache(maxsize=128)
-def _descriptors(smiles: str) -> np.ndarray:
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"Invalid SMILES: {smiles}")
-    mw = Descriptors.MolWt(mol)
-    logp = Descriptors.MolLogP(mol)
-    hbd = Lipinski.NumHDonors(mol)
-    hba = Lipinski.NumHAcceptors(mol)
-    rot = Lipinski.NumRotatableBonds(mol)
-    arom = Lipinski.NumAromaticRings(mol)
-    tpsa = Descriptors.TPSA(mol)
-    return np.array([mw, logp, hbd, hba, rot, arom, tpsa], dtype=np.float32)
-
-
 _DESC_FUNCS = {}
 for name in CURATED_DESCRIPTORS_LIST:
     func = getattr(Descriptors, name, None)
@@ -229,10 +209,6 @@ def _all_descriptors(smiles: str) -> np.ndarray:
         else:
             vals.append(np.nan)
     return np.array(vals, dtype=np.float32)
-
-
-def _all_descriptors_names() -> list:
-    return list(CURATED_DESCRIPTORS_LIST)
 
 
 
@@ -272,7 +248,7 @@ def build_feature_matrix(train_df, test_df, smiles_col: str = "canonical_smiles"
 
     logger.info("Filtering descriptors (NaN=%.2f, Var=%.2f, Corr=%.2f)...",
                  FEATURE_NAN_THRESHOLD, FEATURE_VAR_THRESHOLD, FEATURE_CORR_THRESHOLD)
-    desc_names = _all_descriptors_names()
+    desc_names = list(CURATED_DESCRIPTORS_LIST)
     feature_filter = FeatureFilter(
         nan_threshold=FEATURE_NAN_THRESHOLD,
         var_threshold=FEATURE_VAR_THRESHOLD,
