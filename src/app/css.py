@@ -28,8 +28,8 @@ h1, h2, h3 { color: #f0f4f8 !important; font-weight: 700 !important; letter-spac
 h1 { font-size: 1.6rem !important; }
 h2 { font-size: 1.25rem !important; }
 h3 { font-size: 1.0rem !important; }
-p, span, label, div, li, td, th { color: #cbd5e1 !important; }
-.stMarkdown p { color: #cbd5e1 !important; line-height: 1.6 !important; }
+p, span, label, div, li, td, th { color: #d4dce8 !important; }
+.stMarkdown p { color: #d4dce8 !important; line-height: 1.6 !important; }
 code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important; }
 
 /* ── Cards ────────────────────────────── */
@@ -73,7 +73,7 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
 .section-header {
     font-size: 0.72rem !important;
     font-weight: 700 !important;
-    color: #94a3b8 !important;
+    color: #b0bec5 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
     margin-top: 0.5rem !important;
@@ -94,7 +94,7 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
     margin-bottom: 1.0rem !important;
 }
 .hero h1 { font-size: 1.5rem !important; font-weight: 800 !important; margin: 0 !important; }
-.hero p { font-size: 0.8rem !important; color: #94a3b8 !important; margin: 0.3rem 0 0.6rem 0 !important; }
+.hero p { font-size: 0.8rem !important; color: #b0bec5 !important; margin: 0.3rem 0 0.6rem 0 !important; }
 
 /* ── Dashboard Metrics ──────────────────────────────────── */
 .dash-grid { display: flex !important; gap: 0.5rem !important; margin-top: 0.8rem !important; flex-wrap: wrap !important; }
@@ -110,9 +110,9 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
 .dash-card:hover {
     border-color: rgba(56, 189, 248, 0.2) !important;
 }
-.dash-label { font-size: 0.6rem !important; font-weight: 600 !important; color: #94a3b8 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; margin-bottom: 0.15rem !important; }
+.dash-label { font-size: 0.6rem !important; font-weight: 600 !important; color: #b0bec5 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; margin-bottom: 0.15rem !important; }
 .dash-value { font-size: 1.2rem !important; font-weight: 700 !important; color: #f8fafc !important; }
-.dash-sub { font-size: 0.6rem !important; color: #64748b !important; margin-top: 0.1rem !important; }
+.dash-sub { font-size: 0.6rem !important; color: #8896a8 !important; margin-top: 0.1rem !important; }
 
 /* ── Progress bars ──────────────────────────────────────── */
 .pb { background: rgba(148, 163, 184, 0.15) !important; border-radius: 4px !important; overflow: hidden !important; height: 5px !important; }
@@ -171,7 +171,7 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
     border-radius: 6px !important;
     padding: 0.75rem 0.9rem !important;
     font-size: 0.75rem !important;
-    color: #94a3b8 !important;
+    color: #b0bec5 !important;
     line-height: 1.5 !important;
     margin-bottom: 0.6rem !important;
 }
@@ -237,7 +237,7 @@ div[data-testid="stDataFrame"] {
 
 /* ── Metric containers ──────────────────────────────────── */
 [data-testid="stMetricValue"] { color: #f8fafc !important; font-weight: 700 !important; }
-[data-testid="stMetricLabel"] { color: #94a3b8 !important; font-size: 0.72rem !important; }
+[data-testid="stMetricLabel"] { color: #b0bec5 !important; font-size: 0.72rem !important; }
 
 </style>
 """

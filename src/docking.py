@@ -10,8 +10,8 @@ from src.chem_utils import mol_from_smiles
 ADENOSINE_TARGETS = {
     "A1":  {"pdb": "5N2S", "name": "Adenosine A1 Receptor",  "chain": "A"},
     "A2A": {"pdb": "4EIY", "name": "Adenosine A2A Receptor", "chain": "A"},
-    "A2B": {"pdb": "4UG2", "name": "Adenosine A2B Receptor", "chain": "A"},
-    "A3":  {"pdb": "7LD3", "name": "Adenosine A3 Receptor",  "chain": "A"},
+    "A2B": {"pdb": "8HDP", "name": "Adenosine A2B Receptor", "chain": "A"},
+    "A3":  {"pdb": "8YH2", "name": "Adenosine A3 Receptor",  "chain": "A"},
 }
 
 _SESSION = requests.Session()

@@ -176,15 +176,21 @@ _ZERO_RESULT = (0.0, 0.0, {"lower": 0.0, "upper": 0.0, "width": 0.0})
 
 
 def _predict_one_model(model_dict, x, in_db, lookup, canon, st):
-    """Predict with one model type for one subtype. Returns (pred, unc, interval)."""
-    if st in model_dict and x is not None:
-        m, s, low, high = _ensemble_predict(model_dict[st], x)
-        return m, s, {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
-    elif in_db:
+    """Predict with one model type for one subtype. Returns (pred, unc, interval).
+
+    For database hits: return experimental value with σ=0 (no prediction uncertainty).
+    For novel compounds: return model prediction with conformal interval.
+    """
+    # DB hits take priority — experimental value, zero uncertainty
+    if in_db:
         val = lookup[canon].get(st)
         if pd.notna(val) and str(val).lower() != 'nan':
             p_val = float(val)
             return p_val, 0.0, {"lower": p_val, "upper": p_val, "width": 0.0}
+    # Model prediction with conformal intervals
+    if st in model_dict and x is not None:
+        m, s, low, high = _ensemble_predict(model_dict[st], x)
+        return m, s, {"lower": round(low, 3), "upper": round(high, 3), "width": round(high - low, 3)}
     return _ZERO_RESULT
 
 

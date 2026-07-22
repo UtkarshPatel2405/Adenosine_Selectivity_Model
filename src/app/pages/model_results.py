@@ -414,6 +414,47 @@ def render_model_results():
                         key=f"dl_tab_{filename}"
                     )
 
+        # Full curated database download
+        st.markdown('<div class="sd"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">📦 Full Curated Database Download</div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div class="sci-box">
+        <b>Complete Training Database.</b> Download the full curated pChEMBL dataset used for model training.
+        Each row is a unique compound (canonical SMILES) with experimental pChEMBL values for each adenosine receptor subtype where data is available.
+        </div>
+        ''', unsafe_allow_html=True)
+        
+        db_path = Path("data/processed/db_lookup_train.json")
+        if db_path.exists():
+            try:
+                db_data = json.loads(db_path.read_text())
+                rows = []
+                for smiles, subtypes in db_data.items():
+                    row = {"SMILES": smiles}
+                    for s in ["A1", "A2A", "A2B", "A3"]:
+                        val = subtypes.get(s)
+                        row[f"pChEMBL_{s}"] = float(val) if val is not None and str(val).lower() != "nan" else None
+                    rows.append(row)
+                df_db = pd.DataFrame(rows)
+                n_compounds = len(df_db)
+                n_values = df_db[["pChEMBL_A1", "pChEMBL_A2A", "pChEMBL_A2B", "pChEMBL_A3"]].notna().sum().sum()
+                st.markdown(f'<div style="font-size:.7rem;color:#b0bec5;margin-bottom:.4rem">'
+                    f'<b>{n_compounds:,}</b> unique compounds · <b>{int(n_values):,}</b> pChEMBL values across 4 subtypes'
+                    f'</div>', unsafe_allow_html=True)
+                csv_bytes = df_db.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="⬇️ Download Full Database (CSV)",
+                    data=csv_bytes,
+                    file_name="adenosine_receptor_database.csv",
+                    mime="text/csv",
+                    key="dl_full_database",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.warning(f"Could not load database: {e}")
+        else:
+            st.info("Database file not found. Run `python -m src.retrain_production` first.")
+
     with tabs[6]:
         _methodology()
         lp = Path("outputs/benchmark/benchmark_comparison.json")

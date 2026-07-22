@@ -13,6 +13,15 @@ from src.config import PROCESSED_DATA_DIR
 
 _MORGAN = GetMorganGenerator(radius=2, fpSize=2048)
 
+# Non-pharmacological CCD codes: membrane lipids, detergents, ions, buffers
+# that co-crystallize with GPCRs but are NOT the drug-like ligand.
+_NON_PHARMA_CCD = {
+    "CLR", "OLA", "OLB", "PLM", "P4G", "Y01", "P6G", "PEG", "GOL",
+    "SO4", "PO4", "EDO", "ACE", "BOG", "LDA", "MYR", "PAM", "STE",
+    "DMS", "MES", "TRS", "CIT", "MPD", "EPE", "PGE", "PG4", "BMA",
+    "NAG", "FUC", "MAN", "GAL", "GLC",
+}
+
 
 @lru_cache(maxsize=1)
 def _load_training_data():
@@ -117,6 +126,9 @@ def render_docking_panel(smiles: str, best_target: str):
                     max_sim = 0.0
                     best_lig_name = ""
                     for lig in entry["ligands"]:
+                        # Skip non-pharmacological ligands (lipids, detergents, etc.)
+                        if lig.get("ccd", "") in _NON_PHARMA_CCD:
+                            continue
                         lig_mol = Chem.MolFromSmiles(lig["smiles"])
                         if lig_mol:
                             lig_fp = _MORGAN.GetFingerprint(lig_mol)
@@ -124,7 +136,8 @@ def render_docking_panel(smiles: str, best_target: str):
                             if sim > max_sim:
                                 max_sim = sim
                                 best_lig_name = lig["name"]
-                    suggested_pdbs.append((max_sim, pdb_id, best_lig_name))
+                    if max_sim > 0:  # Only include PDB entries with real pharmacological ligands
+                        suggested_pdbs.append((max_sim, pdb_id, best_lig_name))
                 suggested_pdbs.sort(key=lambda x: x[0], reverse=True)
         except Exception:
             pass
