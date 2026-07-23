@@ -1,19 +1,15 @@
 import sys
 from pathlib import Path
 
-# Force reload of local app modules when streamlit reruns to prevent stale module cache
-for module_name in list(sys.modules.keys()):
-    if module_name.startswith("src.app"):
-        del sys.modules[module_name]
+# Add project root to sys.path first
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 # Force matplotlib backend and initialize early to avoid circular import issues in Streamlit
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import streamlit as st
 import pandas as pd
