@@ -191,31 +191,16 @@ def render_docking_panel(smiles: str, best_target: str):
                 sim_label = f"Low ({sim:.3f})"
             activity_class = "badge badge-green" if pchembl >= 6.0 else "badge badge-amber" if pchembl >= 4.5 else "badge badge-red"
             
-            # Lookup PDB IDs / download links for training ligand
-            from src.chem_utils import lookup_pdb_ids
-            pdbs = lookup_pdb_ids(tsmiles)
+            # Lookup real PDB IDs for training ligand
+            from src.pdb_utils import get_pdb_ids_for_smiles
+            pdbs = get_pdb_ids_for_smiles(tsmiles)
             if pdbs:
                 pdb_links = " ".join(
-                    f'<a href="https://files.rcsb.org/download/{p["pdb_id"]}.pdb" target="_blank" style="color:#38bdf8;font-size:.55rem;text-decoration:none;border:1px solid rgba(56,189,248,.3);border-radius:3px;padding:0 .25rem;margin-right:.15rem" title="{p.get("name", p["ccd"])}">{p["pdb_id"]} ({p.get("name", p["ccd"])[:12]})</a>'
-                    for p in pdbs[:2]
+                    f'<a href="{p["url"]}" target="_blank" class="badge badge-blue" title="{p.get("name", p["pdb_id"])}">{p["pdb_id"]}</a>'
+                    for p in pdbs[:3]
                 )
             else:
-                import urllib.parse, json
-                req_dict = {
-                    "query": {
-                        "type": "terminal",
-                        "service": "chemical",
-                        "parameters": {
-                            "value": tsmiles,
-                            "type": "descriptor",
-                            "descriptor_type": "SMILES",
-                            "match_type": "graph-relaxed-stereo"
-                        }
-                    },
-                    "return_type": "entry"
-                }
-                req_encoded = urllib.parse.quote(json.dumps(req_dict))
-                pdb_links = f'<a href="https://www.rcsb.org/search?request={req_encoded}" target="_blank" style="color:#64748b;font-size:.55rem;text-decoration:none">Search PDB →</a>'
+                pdb_links = '<span style="color:#64748b;font-size:.65rem">—</span>'
 
             rows.append({
                 "SMILES": f'<span title="{tsmiles}" style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:.68rem;color:#e2e8f0">{tsmiles}</span>',

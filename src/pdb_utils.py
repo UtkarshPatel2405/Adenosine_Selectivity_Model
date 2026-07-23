@@ -187,6 +187,32 @@ def search_pdb_by_smiles(smiles: str, max_results: int = 3) -> list[dict]:
     return entries
 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=512)
+def get_pdb_ids_for_smiles(smiles: str) -> list[dict]:
+    """Get real PDB IDs for a SMILES string.
+    First checks local lookup index (lookup_pdb_ids), then queries RCSB PDB Search API.
+    Returns list of dicts with 'pdb_id', 'name', and 'url'.
+    """
+    try:
+        from src.chem_utils import lookup_pdb_ids
+        local_matches = lookup_pdb_ids(smiles)
+        if local_matches:
+            return [{"pdb_id": m["pdb_id"], "name": m.get("name", m.get("ccd", "")), "url": f"https://www.rcsb.org/structure/{m['pdb_id']}"} for m in local_matches]
+    except Exception:
+        pass
+
+    try:
+        api_matches = search_pdb_by_smiles(smiles, max_results=3)
+        if api_matches:
+            return [{"pdb_id": m["pdb_id"], "name": m["pdb_id"], "url": m["url"]} for m in api_matches]
+    except Exception:
+        pass
+
+    return []
+
+
 def search_pdb_by_ccd(ccd_code: str) -> list[dict]:
     ccd_code = ccd_code.strip().upper()
     query = {
