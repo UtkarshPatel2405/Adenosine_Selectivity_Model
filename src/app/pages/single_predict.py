@@ -487,7 +487,7 @@ def _render_similarity_panel(canon):
                 st.markdown(
                     f'<div style="display:flex;align-items:center;gap:.3rem;padding:.15rem .35rem;font-size:.6rem;border-bottom:1px solid rgba(148,163,184,.06)">'
                     f'<span style="color:#94a3b8;min-width:1rem">{i+1}.</span>'
-                    f'<code style="flex:1;font-size:.55rem;color:#e2e8f0;background:rgba(30,41,59,.5);padding:.1rem .25rem;border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{s[:40]}{".." if len(s)>40 else ""}</code>'
+                    f'<code title="{s}" style="flex:1;font-size:.55rem;color:#e2e8f0;background:rgba(30,41,59,.5);padding:.1rem .25rem;border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{s}</code>'
                     f'<span style="min-width:3rem;text-align:right;color:#94a3b8">{t:.4f}</span>'
                     f'<span style="min-width:4.5rem;text-align:right">{pdb_info}</span>'
                     f'</div>', unsafe_allow_html=True)

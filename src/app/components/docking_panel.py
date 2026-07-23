@@ -218,7 +218,7 @@ def render_docking_panel(smiles: str, best_target: str):
                 pdb_links = f'<a href="https://www.rcsb.org/search?request={req_encoded}" target="_blank" style="color:#64748b;font-size:.55rem;text-decoration:none">Search PDB →</a>'
 
             rows.append({
-                "SMILES": tsmiles[:45] + ("..." if len(tsmiles) > 45 else ""),
+                "SMILES": f'<span title="{tsmiles}" style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:.68rem;color:#e2e8f0">{tsmiles}</span>',
                 "Tanimoto": sim_label,
                 "pChEMBL": f'{pchembl:.2f}',
                 "Activity": f'<span class="{activity_class}">{"Active" if pchembl >= 6 else "Weak" if pchembl >= 4.5 else "Inactive"}</span>',
