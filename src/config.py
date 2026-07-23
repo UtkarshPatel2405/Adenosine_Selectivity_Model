@@ -75,8 +75,8 @@ _RUN_TIMESTAMP: str | None = None
 def _get_run_id() -> str:
     global _RUN_ID
     if _RUN_ID is None:
-        from src.run_id import generate_run_id
-        _RUN_ID = generate_run_id()
+        import uuid
+        _RUN_ID = f"ADENO_{_time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     return _RUN_ID
 
 

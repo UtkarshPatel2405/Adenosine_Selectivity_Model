@@ -14,7 +14,25 @@ from src.config import (
     SUBTYPES, PROCESSED_DATA_DIR, MODELS_DIR, OUTPUTS_DIR,
     CONFORMAL_ALPHA, LOG_LEVEL, RUN_ID,
 )
-from src.run_id import save_with_run_id
+def save_with_run_id(data: dict, out_dir_or_path: str, filename_or_runid: str, run_id: str = None) -> None:
+    """Save data to versioned JSON path and latest JSON path."""
+    if run_id is None:
+        run_id = filename_or_runid
+        target = Path(out_dir_or_path)
+    else:
+        target = Path(out_dir_or_path) / filename_or_runid
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target_file = target if str(target).endswith(".json") else Path(f"{target}.json")
+    versioned = target_file.parent / f"{run_id}_{target_file.name}"
+    
+    save_data = dict(data)
+    save_data["run_id"] = run_id
+    
+    with open(versioned, "w") as f:
+        json.dump(save_data, f, indent=2)
+    with open(target_file, "w") as f:
+        json.dump(save_data, f, indent=2)
 
 logger = logging.getLogger(__name__)
 

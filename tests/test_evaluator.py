@@ -5,8 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.evaluator import _calibration_quartiles
-from src.run_id import save_with_run_id
+from src.evaluator import _calibration_quartiles, save_with_run_id
 
 
 class TestCalibrationQuartiles:
