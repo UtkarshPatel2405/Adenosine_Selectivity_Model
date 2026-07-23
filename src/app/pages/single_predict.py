@@ -475,9 +475,12 @@ def _render_similarity_panel(canon):
                             "service": "chemical",
                             "parameters": {
                                 "value": s,
-                                "type": "similarity"
+                                "type": "descriptor",
+                                "descriptor_type": "SMILES",
+                                "match_type": "graph-relaxed-stereo"
                             }
-                        }
+                        },
+                        "return_type": "entry"
                     }
                     req_encoded = urllib.parse.quote(json.dumps(req_dict))
                     pdb_info = f'<a href="https://www.rcsb.org/search?request={req_encoded}" target="_blank" style="color:#64748b;font-size:.5rem;text-decoration:none">Search PDB →</a>'
