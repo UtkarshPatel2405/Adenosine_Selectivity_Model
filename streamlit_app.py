@@ -21,7 +21,7 @@ from src.config import SUBTYPES
 from src.app.css import _CSS
 from src.app.components.sidebar import render_sidebar
 from src.app.pages.single_predict import render_single_predict
-from src.app.pages.batch_predict import render_batch_predict
+from src.app.components.batch_predict import render_batch_predict
 from src.app.pages.model_results import render_model_results
 from src.app.components.model_reports import _load_json
 
