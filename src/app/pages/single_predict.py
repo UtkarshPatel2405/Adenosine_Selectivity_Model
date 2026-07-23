@@ -449,8 +449,10 @@ def render_single_predict():
         _render_similarity_panel(canon)
 
 def _render_similarity_panel(canon):
-    """Top-10 neighbors with PDB lookup using canonical SMILES matching."""
-    from src.chem_utils import topk_tanimoto, lookup_pdb_ids
+    """Top-10 neighbors with PDB lookup and 3D PDB/SDF conformer downloads in structured table."""
+    from src.chem_utils import topk_tanimoto, generate_pdb_block, generate_sdf_block
+    from src.pdb_utils import get_pdb_ids_for_smiles
+    import base64
 
     @st.cache_data(show_spinner=False)
     def _cached_tanimoto(smiles):
@@ -459,23 +461,45 @@ def _render_similarity_panel(canon):
     try:
         _, ts = _cached_tanimoto(canon)
         if ts:
-            for i, (s, t) in enumerate(ts):
-                from src.pdb_utils import get_pdb_ids_for_smiles
+            rows = []
+            for i, (s, t) in enumerate(ts, 1):
+                if t >= 0.7:
+                    sim_label = f'<span class="badge badge-green">High ({t:.3f})</span>'
+                elif t >= 0.4:
+                    sim_label = f'<span class="badge badge-amber">Medium ({t:.3f})</span>'
+                else:
+                    sim_label = f'<span class="badge badge-red">Low ({t:.3f})</span>'
+
                 pdbs = get_pdb_ids_for_smiles(s)
                 if pdbs:
-                    pdb_info = " ".join(
+                    pdb_links = " ".join(
                         f'<a href="{p["url"]}" target="_blank" class="badge badge-blue" title="{p.get("name", p["pdb_id"])}">{p["pdb_id"]}</a>'
                         for p in pdbs[:3]
                     )
                 else:
-                    pdb_info = '<span style="color:#64748b;font-size:.65rem">—</span>'
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:.3rem;padding:.15rem .35rem;font-size:.6rem;border-bottom:1px solid rgba(148,163,184,.06)">'
-                    f'<span style="color:#94a3b8;min-width:1rem">{i+1}.</span>'
-                    f'<code title="{s}" style="flex:1;font-size:.55rem;color:#e2e8f0;background:rgba(30,41,59,.5);padding:.1rem .25rem;border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{s}</code>'
-                    f'<span style="min-width:3rem;text-align:right;color:#94a3b8">{t:.4f}</span>'
-                    f'<span style="min-width:4.5rem;text-align:right">{pdb_info}</span>'
-                    f'</div>', unsafe_allow_html=True)
+                    gen_links = []
+                    pdb_text = generate_pdb_block(s)
+                    if pdb_text:
+                        pdb_b64 = base64.b64encode(pdb_text.encode('utf-8')).decode('utf-8')
+                        gen_links.append(f'<a href="data:chemical/x-pdb;base64,{pdb_b64}" download="neighbor_{i}_3d.pdb" class="badge badge-cyan" title="Download generated 3D PDB conformer">📥 3D PDB</a>')
+                    sdf_text = generate_sdf_block(s)
+                    if sdf_text:
+                        sdf_b64 = base64.b64encode(sdf_text.encode('utf-8')).decode('utf-8')
+                        gen_links.append(f'<a href="data:chemical/x-mdl-sdfile;base64,{sdf_b64}" download="neighbor_{i}_3d.sdf" class="badge badge-purple" title="Download generated 3D SDF conformer">📥 3D SDF</a>')
+                    pdb_links = " ".join(gen_links) if gen_links else '<span style="color:#64748b;font-size:.65rem">—</span>'
+
+                rows.append({
+                    "#": i,
+                    "SMILES": f'<span title="{s}" style="display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:.68rem;color:#e2e8f0">{s}</span>',
+                    "Tanimoto": sim_label,
+                    "PDB / 3D Structure": pdb_links,
+                })
+
+            df = pd.DataFrame(rows)
+            st.markdown(
+                df.to_html(escape=False, index=False, classes="dataframe"),
+                unsafe_allow_html=True
+            )
         else:
             st.caption("No similar molecules found in training set.")
     except Exception as ex:
