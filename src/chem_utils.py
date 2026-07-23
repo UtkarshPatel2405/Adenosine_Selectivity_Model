@@ -289,3 +289,19 @@ def generate_pdb_block(smiles: str) -> Optional[str]:
         return Chem.MolToPDBBlock(mol_3d)
     except Exception:
         return None
+
+def generate_sdf_block(smiles: str) -> Optional[str]:
+    """Generates a 3D conformer and returns the SDF block string."""
+    mol = mol_from_smiles(smiles)
+    if mol is None:
+        return None
+    try:
+        mol_3d = Chem.AddHs(mol)
+        embed_status = AllChem.EmbedMolecule(mol_3d, AllChem.ETKDGv3())
+        if embed_status != 0:
+            embed_status = AllChem.EmbedMolecule(mol_3d)
+        if embed_status == 0:
+            AllChem.MMFFOptimizeMolecule(mol_3d)
+        return Chem.MolToMolBlock(mol_3d)
+    except Exception:
+        return None

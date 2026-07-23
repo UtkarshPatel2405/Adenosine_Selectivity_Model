@@ -191,8 +191,11 @@ def render_docking_panel(smiles: str, best_target: str):
                 sim_label = f"Low ({sim:.3f})"
             activity_class = "badge badge-green" if pchembl >= 6.0 else "badge badge-amber" if pchembl >= 4.5 else "badge badge-red"
             
-            # Lookup real PDB IDs for training ligand
+            # Lookup real PDB IDs or generate 3D PDB/SDF conformers
             from src.pdb_utils import get_pdb_ids_for_smiles
+            from src.chem_utils import generate_pdb_block, generate_sdf_block
+            import base64
+
             pdbs = get_pdb_ids_for_smiles(tsmiles)
             if pdbs:
                 pdb_links = " ".join(
@@ -200,14 +203,24 @@ def render_docking_panel(smiles: str, best_target: str):
                     for p in pdbs[:3]
                 )
             else:
-                pdb_links = '<span style="color:#64748b;font-size:.65rem">—</span>'
+                # Generate 3D PDB & 3D SDF conformers on-the-fly
+                gen_links = []
+                pdb_text = generate_pdb_block(tsmiles)
+                if pdb_text:
+                    pdb_b64 = base64.b64encode(pdb_text.encode('utf-8')).decode('utf-8')
+                    gen_links.append(f'<a href="data:chemical/x-pdb;base64,{pdb_b64}" download="ligand_3d.pdb" class="badge badge-cyan" title="Download generated 3D PDB conformer">📥 3D PDB</a>')
+                sdf_text = generate_sdf_block(tsmiles)
+                if sdf_text:
+                    sdf_b64 = base64.b64encode(sdf_text.encode('utf-8')).decode('utf-8')
+                    gen_links.append(f'<a href="data:chemical/x-mdl-sdfile;base64,{sdf_b64}" download="ligand_3d.sdf" class="badge badge-purple" title="Download generated 3D SDF conformer">📥 3D SDF</a>')
+                pdb_links = " ".join(gen_links) if gen_links else '<span style="color:#64748b;font-size:.65rem">—</span>'
 
             rows.append({
                 "SMILES": f'<span title="{tsmiles}" style="display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;font-family:monospace;font-size:.68rem;color:#e2e8f0">{tsmiles}</span>',
                 "Tanimoto": sim_label,
                 "pChEMBL": f'{pchembl:.2f}',
                 "Activity": f'<span class="{activity_class}">{"Active" if pchembl >= 6 else "Weak" if pchembl >= 4.5 else "Inactive"}</span>',
-                "PDB Structure": pdb_links,
+                "PDB / 3D Structure": pdb_links,
             })
         
         df = pd.DataFrame(rows)
@@ -218,7 +231,7 @@ def render_docking_panel(smiles: str, best_target: str):
         st.markdown(
             '<div style="font-size:.55rem;color:#64748b;margin-top:.3rem">'
             'Tanimoto ≥ 0.7 = high confidence in similar binding; 0.4–0.7 = moderate; < 0.4 = low confidence. '
-            'pChEMBL ≥ 6.0 = active (μM affinity or better). PDB Structure provides direct co-crystal PDB downloads or RCSB search links.</div>',
+            'pChEMBL ≥ 6.0 = active (μM affinity or better). PDB / 3D Structure provides co-crystal PDB entries or generated 3D PDB / 3D SDF conformer downloads.</div>',
             unsafe_allow_html=True)
 
     # All receptors overview
