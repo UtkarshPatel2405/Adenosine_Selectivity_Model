@@ -190,11 +190,39 @@ def render_docking_panel(smiles: str, best_target: str):
                 sim_class = "badge badge-red"
                 sim_label = f"Low ({sim:.3f})"
             activity_class = "badge badge-green" if pchembl >= 6.0 else "badge badge-amber" if pchembl >= 4.5 else "badge badge-red"
+            
+            # Lookup PDB IDs / download links for training ligand
+            from src.chem_utils import lookup_pdb_ids
+            pdbs = lookup_pdb_ids(tsmiles)
+            if pdbs:
+                pdb_links = " ".join(
+                    f'<a href="https://files.rcsb.org/download/{p["pdb_id"]}.pdb" target="_blank" style="color:#38bdf8;font-size:.55rem;text-decoration:none;border:1px solid rgba(56,189,248,.3);border-radius:3px;padding:0 .25rem;margin-right:.15rem" title="{p.get("name", p["ccd"])}">{p["pdb_id"]} ({p.get("name", p["ccd"])[:12]})</a>'
+                    for p in pdbs[:2]
+                )
+            else:
+                import urllib.parse, json
+                req_dict = {
+                    "query": {
+                        "type": "terminal",
+                        "service": "chemical",
+                        "parameters": {
+                            "value": tsmiles,
+                            "type": "descriptor",
+                            "descriptor_type": "SMILES",
+                            "match_type": "graph-relaxed-stereo"
+                        }
+                    },
+                    "return_type": "entry"
+                }
+                req_encoded = urllib.parse.quote(json.dumps(req_dict))
+                pdb_links = f'<a href="https://www.rcsb.org/search?request={req_encoded}" target="_blank" style="color:#64748b;font-size:.55rem;text-decoration:none">Search PDB →</a>'
+
             rows.append({
-                "SMILES": tsmiles[:50] + ("..." if len(tsmiles) > 50 else ""),
+                "SMILES": tsmiles[:45] + ("..." if len(tsmiles) > 45 else ""),
                 "Tanimoto": sim_label,
                 "pChEMBL": f'{pchembl:.2f}',
                 "Activity": f'<span class="{activity_class}">{"Active" if pchembl >= 6 else "Weak" if pchembl >= 4.5 else "Inactive"}</span>',
+                "PDB Structure": pdb_links,
             })
         
         df = pd.DataFrame(rows)
@@ -205,7 +233,7 @@ def render_docking_panel(smiles: str, best_target: str):
         st.markdown(
             '<div style="font-size:.55rem;color:#64748b;margin-top:.3rem">'
             'Tanimoto ≥ 0.7 = high confidence in similar binding; 0.4–0.7 = moderate; < 0.4 = low confidence. '
-            'pChEMBL ≥ 6.0 = active (μM affinity or better).</div>',
+            'pChEMBL ≥ 6.0 = active (μM affinity or better). PDB Structure provides direct co-crystal PDB downloads or RCSB search links.</div>',
             unsafe_allow_html=True)
 
     # All receptors overview
