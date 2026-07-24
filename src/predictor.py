@@ -104,11 +104,19 @@ def _load_models(prefix: str):
             if path.exists():
                 try:
                     if prefix == "lgb":
-                        import lightgbm
-                        import lightgbm.sklearn
+                        try:
+                            import lightgbm
+                            import lightgbm.sklearn
+                        except ModuleNotFoundError:
+                            logger.warning("LightGBM module not installed in Python environment. Skipping LGB models.")
+                            return {}
                     elif prefix == "xgboost":
-                        import xgboost
-                        import xgboost.sklearn
+                        try:
+                            import xgboost
+                            import xgboost.sklearn
+                        except ModuleNotFoundError:
+                            logger.warning("XGBoost module not installed in Python environment. Skipping XGB models.")
+                            return {}
                     with open(path, "rb") as f:
                         models[st] = pickle.load(f)
                     break

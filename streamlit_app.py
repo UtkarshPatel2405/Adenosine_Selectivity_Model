@@ -3,10 +3,21 @@ import numpy as np
 from pathlib import Path
 
 # Explicit imports so unpickling resolves LightGBM, XGBoost, and MAPIE models
-import lightgbm as lgb
-import lightgbm.sklearn
-import xgboost as xgb
-import mapie
+try:
+    import lightgbm as lgb
+    import lightgbm.sklearn
+except ModuleNotFoundError:
+    lgb = None
+
+try:
+    import xgboost as xgb
+except ModuleNotFoundError:
+    xgb = None
+
+try:
+    import mapie
+except ModuleNotFoundError:
+    mapie = None
 
 class AverageEnsemble:
     """Equal-weight average ensemble model wrapper for stacked prediction."""
