@@ -293,16 +293,22 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = True) -> Dict[st
             preds["Stacked"][st] = p_val
             unc["Stacked"][st] = 0.0
             intervals["Stacked"][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
-        elif st in stack_models and x is not None:
-            base_feats = [preds[mod_name].get(st, 0.0) for mod_name in ("XGBoost", "RandomForest", "LightGBM")]
-            meta_x = np.array([base_feats])
-            m = float(stack_models[st].predict(meta_x)[0])
-            preds["Stacked"][st] = round(m, 3)
-            unc["Stacked"][st] = 0.0
-            intervals["Stacked"][st] = {"lower": round(m, 3), "upper": round(m, 3), "width": 0.0}
         else:
-            valid_vals = [preds[mod_name].get(st, 0.0) for mod_name in ("XGBoost", "RandomForest", "LightGBM") if preds[mod_name].get(st, 0.0) > 0]
-            m = float(np.mean(valid_vals)) if valid_vals else 0.0
+            # Exclude zero or missing base model predictions from Stacked ensemble mean
+            valid_base_vals = [
+                preds[mod_name].get(st, 0.0) 
+                for mod_name in ("XGBoost", "RandomForest", "LightGBM") 
+                if isinstance(preds[mod_name].get(st, 0.0), (int, float)) and preds[mod_name].get(st, 0.0) > 0
+            ]
+            if st in stack_models and x is not None and len(valid_base_vals) == 3:
+                try:
+                    meta_x = np.array([valid_base_vals])
+                    m = float(stack_models[st].predict(meta_x)[0])
+                except Exception:
+                    m = float(np.mean(valid_base_vals)) if valid_base_vals else 0.0
+            else:
+                m = float(np.mean(valid_base_vals)) if valid_base_vals else 0.0
+
             preds["Stacked"][st] = round(m, 3)
             unc["Stacked"][st] = 0.0
             intervals["Stacked"][st] = {"lower": round(m, 3), "upper": round(m, 3), "width": 0.0}
