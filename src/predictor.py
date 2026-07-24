@@ -103,6 +103,12 @@ def _load_models(prefix: str):
         for path in candidates:
             if path.exists():
                 try:
+                    if prefix == "lgb":
+                        import lightgbm
+                        import lightgbm.sklearn
+                    elif prefix == "xgboost":
+                        import xgboost
+                        import xgboost.sklearn
                     with open(path, "rb") as f:
                         models[st] = pickle.load(f)
                     break
