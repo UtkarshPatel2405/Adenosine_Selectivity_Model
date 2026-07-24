@@ -3,43 +3,43 @@ _CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ═══════════════════════════════════════════════════════════
-   Scientific Platform Theme - Simplified & Robust
+   Scientific Platform Theme - High Contrast & Accessibility
    ═══════════════════════════════════════════════════════════ */
 
 html, body, [data-testid="stAppViewContainer"] {
     background: #090f1d !important;
-    color: #e2e8f0 !important;
+    color: #f1f5f9 !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
 [data-testid="stHeader"] {
     background: rgba(9, 15, 29, 0.95) !important;
     backdrop-filter: blur(8px) !important;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.15) !important;
 }
 
 [data-testid="stSidebar"] {
     background: #060b15 !important;
-    border-right: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border-right: 1px solid rgba(56, 189, 248, 0.15) !important;
 }
 
 /* ── Typography ─────────────────────────────────────────── */
-h1, h2, h3 { color: #f0f4f8 !important; font-weight: 700 !important; letter-spacing: -0.02em !important; }
+h1, h2, h3 { color: #f8fafc !important; font-weight: 700 !important; letter-spacing: -0.02em !important; }
 h1 { font-size: 1.6rem !important; }
 h2 { font-size: 1.25rem !important; }
 h3 { font-size: 1.0rem !important; }
-p, span, label, div, li, td, th { color: #d4dce8 !important; }
-.stMarkdown p { color: #d4dce8 !important; line-height: 1.6 !important; }
-code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important; }
+p, span, label, div, li, td, th { color: #e2e8f0 !important; }
+.stMarkdown p { color: #e2e8f0 !important; line-height: 1.6 !important; }
+code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !important; color: #f1f5f9 !important; }
 
 /* ── Cards ────────────────────────────── */
 .card {
     background: #111a2e !important;
-    border: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border: 1px solid rgba(56, 189, 248, 0.15) !important;
     border-radius: 8px !important;
     padding: 0.8rem 1.0rem !important;
     margin-bottom: 0.8rem !important;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.15) !important;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2) !important;
 }
 
 /* ── Scientific Badges ──────────────────────────────────── */
@@ -54,13 +54,13 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
     letter-spacing: 0.02em !important;
     white-space: nowrap !important;
 }
-.badge-blue { background: rgba(56, 189, 248, 0.15) !important; color: #7dd3fc !important; border: 1px solid rgba(56, 189, 248, 0.25) !important; }
-.badge-green { background: rgba(34, 197, 94, 0.15) !important; color: #86efac !important; border: 1px solid rgba(34, 197, 94, 0.25) !important; }
-.badge-amber { background: rgba(234, 179, 8, 0.15) !important; color: #fde047 !important; border: 1px solid rgba(234, 179, 8, 0.25) !important; }
-.badge-red { background: rgba(239, 68, 68, 0.15) !important; color: #fca5a5 !important; border: 1px solid rgba(239, 68, 68, 0.25) !important; }
-.badge-purple { background: rgba(168, 85, 247, 0.15) !important; color: #d8b4fe !important; border: 1px solid rgba(168, 85, 247, 0.25) !important; }
-.badge-cyan { background: rgba(20, 184, 166, 0.15) !important; color: #5eead4 !important; border: 1px solid rgba(20, 184, 166, 0.25) !important; }
-.badge-slate { background: rgba(148, 163, 184, 0.12) !important; color: #94a3b8 !important; border: 1px solid rgba(148, 163, 184, 0.18) !important; }
+.badge-blue { background: rgba(56, 189, 248, 0.2) !important; color: #38bdf8 !important; border: 1px solid rgba(56, 189, 248, 0.4) !important; }
+.badge-green { background: rgba(34, 197, 94, 0.2) !important; color: #4ade80 !important; border: 1px solid rgba(34, 197, 94, 0.4) !important; }
+.badge-amber { background: rgba(234, 179, 8, 0.2) !important; color: #facc15 !important; border: 1px solid rgba(234, 179, 8, 0.4) !important; }
+.badge-red { background: rgba(239, 68, 68, 0.2) !important; color: #f87171 !important; border: 1px solid rgba(239, 68, 68, 0.4) !important; }
+.badge-purple { background: rgba(168, 85, 247, 0.2) !important; color: #c084fc !important; border: 1px solid rgba(168, 85, 247, 0.4) !important; }
+.badge-cyan { background: rgba(20, 184, 166, 0.2) !important; color: #2dd4bf !important; border: 1px solid rgba(20, 184, 166, 0.4) !important; }
+.badge-slate { background: rgba(148, 163, 184, 0.2) !important; color: #cbd5e1 !important; border: 1px solid rgba(148, 163, 184, 0.35) !important; }
 
 .badge-row {
     display: flex !important;
@@ -73,13 +73,13 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
 .section-header {
     font-size: 0.72rem !important;
     font-weight: 700 !important;
-    color: #b0bec5 !important;
+    color: #e2e8f0 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
     margin-top: 0.5rem !important;
     margin-bottom: 0.6rem !important;
     padding-bottom: 0.4rem !important;
-    border-bottom: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.15) !important;
     display: flex !important;
     align-items: center !important;
     gap: 0.5rem !important;
@@ -89,18 +89,18 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
 .hero {
     padding: 1.2rem 1.6rem !important;
     background: #0f172a !important;
-    border: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border: 1px solid rgba(56, 189, 248, 0.15) !important;
     border-radius: 10px !important;
     margin-bottom: 1.0rem !important;
 }
-.hero h1 { font-size: 1.5rem !important; font-weight: 800 !important; margin: 0 !important; }
-.hero p { font-size: 0.8rem !important; color: #b0bec5 !important; margin: 0.3rem 0 0.6rem 0 !important; }
+.hero h1 { font-size: 1.5rem !important; font-weight: 800 !important; margin: 0 !important; color: #f8fafc !important; }
+.hero p { font-size: 0.8rem !important; color: #cbd5e1 !important; margin: 0.3rem 0 0.6rem 0 !important; }
 
 /* ── Dashboard Metrics ──────────────────────────────────── */
 .dash-grid { display: flex !important; gap: 0.5rem !important; margin-top: 0.8rem !important; flex-wrap: wrap !important; }
 .dash-card {
     background: #1e293b !important;
-    border: 1px solid rgba(56, 189, 248, 0.1) !important;
+    border: 1px solid rgba(56, 189, 248, 0.15) !important;
     border-radius: 6px !important;
     padding: 0.6rem 0.8rem !important;
     text-align: center !important;
@@ -108,25 +108,29 @@ code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.78rem !
     min-width: 80px !important;
 }
 .dash-card:hover {
-    border-color: rgba(56, 189, 248, 0.2) !important;
+    border-color: rgba(56, 189, 248, 0.3) !important;
 }
-.dash-label { font-size: 0.6rem !important; font-weight: 600 !important; color: #b0bec5 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; margin-bottom: 0.15rem !important; }
-.dash-value { font-size: 1.2rem !important; font-weight: 700 !important; color: #f8fafc !important; }
-.dash-sub { font-size: 0.6rem !important; color: #8896a8 !important; margin-top: 0.1rem !important; }
+.dash-label { font-size: 0.6rem !important; font-weight: 600 !important; color: #cbd5e1 !important; text-transform: uppercase !important; letter-spacing: 0.06em !important; margin-bottom: 0.15rem !important; }
+.dash-value { font-size: 1.2rem !important; font-weight: 700 !important; color: #ffffff !important; }
+.dash-sub { font-size: 0.6rem !important; color: #94a3b8 !important; margin-top: 0.1rem !important; }
 
 /* ── Progress bars ──────────────────────────────────────── */
-.pb { background: rgba(148, 163, 184, 0.15) !important; border-radius: 4px !important; overflow: hidden !important; height: 5px !important; }
+.pb { background: rgba(148, 163, 184, 0.2) !important; border-radius: 4px !important; overflow: hidden !important; height: 5px !important; }
 .pb .f { height: 100% !important; border-radius: 4px !important; }
 
-/* ── Inputs ─────────────────────────────────────────────── */
+/* ── Inputs & Selectboxes ────────────────────────────────── */
 .stTextInput > div > div > input {
     background: #0f172a !important;
-    border: 1px solid rgba(56, 189, 248, 0.15) !important;
+    border: 1px solid rgba(56, 189, 248, 0.2) !important;
     border-radius: 6px !important;
-    color: #e2e8f0 !important;
+    color: #f8fafc !important;
     padding: 0.5rem 0.75rem !important;
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.82rem !important;
+}
+
+div[data-baseweb="select"] input {
+    caret-color: transparent !important;
 }
 
 /* ── Buttons ────────────────────────────────────────────── */

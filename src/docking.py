@@ -8,8 +8,8 @@ import requests
 from src.chem_utils import mol_from_smiles
 
 ADENOSINE_TARGETS = {
-    "A1":  {"pdb": "5N2S", "name": "Adenosine A1 Receptor",  "chain": "A"},
-    "A2A": {"pdb": "4EIY", "name": "Adenosine A2A Receptor", "chain": "A"},
+    "A1":  {"pdb": "6D9H", "name": "Adenosine A1 Receptor",  "chain": "A"},
+    "A2A": {"pdb": "2YDO", "name": "Adenosine A2A Receptor", "chain": "A"},
     "A2B": {"pdb": "8HDP", "name": "Adenosine A2B Receptor", "chain": "A"},
     "A3":  {"pdb": "8YH2", "name": "Adenosine A3 Receptor",  "chain": "A"},
 }

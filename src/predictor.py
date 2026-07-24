@@ -1,6 +1,7 @@
 import json
 import logging
 import pickle
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -10,10 +11,33 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Lipinski
 
+try:
+    import xgboost as xgb
+except Exception:
+    xgb = None
+
+try:
+    import lightgbm as lgb
+except Exception:
+    lgb = None
+
+try:
+    import mapie
+except Exception:
+    mapie = None
+
 from src.features import build_features
 from src.config import SUBTYPES, MODELS_DIR, PROCESSED_DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+
+class AverageEnsemble:
+    """Equal-weight average ensemble model wrapper for stacked prediction."""
+    def predict(self, X):
+        return np.mean(X, axis=1)
+
+setattr(sys.modules['__main__'], 'AverageEnsemble', AverageEnsemble)
 
 
 def _try_gnn_predict(smiles, subtype):
@@ -194,7 +218,7 @@ def _predict_one_model(model_dict, x, in_db, lookup, canon, st):
     return _ZERO_RESULT
 
 
-def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[str, Any]:
+def predict(smiles: str, threshold: float = 6.0, run_rf: bool = True) -> Dict[str, Any]:
     lookup = _load_db_lookup()
 
     try:
@@ -205,7 +229,7 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
     xgb_models = _load_xgb_models()
     lgb_models = _load_lgb_models()
     stack_models = _load_stack_models()
-    rf_models = _load_rf_models() if run_rf else {}
+    rf_models = _load_rf_models()
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -234,7 +258,6 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
 
     source = "database" if in_db else "model"
 
-    # ponytail: loop replaces 5 copy-paste blocks
     base_model_map = {
         "XGBoost": xgb_models,
         "RandomForest": rf_models,
@@ -249,18 +272,25 @@ def predict(smiles: str, threshold: float = 6.0, run_rf: bool = False) -> Dict[s
             intervals[mod_name][st] = iv
 
         # --- Stacked ensemble ---
-        if st in stack_models and x is not None:
-            base_feats = []
-            for mod_name in ("XGBoost", "RandomForest", "LightGBM"):
-                v = preds[mod_name].get(st, 0.0)
-                base_feats.append(v if isinstance(v, (int, float)) else 0.0)
+        if in_db:
+            val = lookup[canon].get(st)
+            p_val = float(val) if (pd.notna(val) and str(val).lower() != 'nan') else 0.0
+            preds["Stacked"][st] = p_val
+            unc["Stacked"][st] = 0.0
+            intervals["Stacked"][st] = {"lower": p_val, "upper": p_val, "width": 0.0}
+        elif st in stack_models and x is not None:
+            base_feats = [preds[mod_name].get(st, 0.0) for mod_name in ("XGBoost", "RandomForest", "LightGBM")]
             meta_x = np.array([base_feats])
             m = float(stack_models[st].predict(meta_x)[0])
             preds["Stacked"][st] = round(m, 3)
             unc["Stacked"][st] = 0.0
             intervals["Stacked"][st] = {"lower": round(m, 3), "upper": round(m, 3), "width": 0.0}
         else:
-            preds["Stacked"][st], unc["Stacked"][st], intervals["Stacked"][st] = _ZERO_RESULT
+            valid_vals = [preds[mod_name].get(st, 0.0) for mod_name in ("XGBoost", "RandomForest", "LightGBM") if preds[mod_name].get(st, 0.0) > 0]
+            m = float(np.mean(valid_vals)) if valid_vals else 0.0
+            preds["Stacked"][st] = round(m, 3)
+            unc["Stacked"][st] = 0.0
+            intervals["Stacked"][st] = {"lower": round(m, 3), "upper": round(m, 3), "width": 0.0}
 
         # --- PyTorch / GNN ---
         pred_val = _try_gnn_predict(canon, st)

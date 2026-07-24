@@ -1,5 +1,29 @@
 import sys
+import numpy as np
 from pathlib import Path
+
+# Explicit imports so unpickling resolves LightGBM, XGBoost, and MAPIE models
+try:
+    import lightgbm as lgb
+except Exception:
+    lgb = None
+
+try:
+    import xgboost as xgb
+except Exception:
+    xgb = None
+
+try:
+    import mapie
+except Exception:
+    mapie = None
+
+class AverageEnsemble:
+    """Equal-weight average ensemble model wrapper for stacked prediction."""
+    def predict(self, X):
+        return np.mean(X, axis=1)
+
+setattr(sys.modules['__main__'], 'AverageEnsemble', AverageEnsemble)
 
 # Add project root to sys.path first
 ROOT = Path(__file__).resolve().parent
