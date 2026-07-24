@@ -11,20 +11,10 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Lipinski
 
-try:
-    import xgboost as xgb
-except Exception:
-    xgb = None
-
-try:
-    import lightgbm as lgb
-except Exception:
-    lgb = None
-
-try:
-    import mapie
-except Exception:
-    mapie = None
+import lightgbm as lgb
+import lightgbm.sklearn
+import xgboost as xgb
+import mapie
 
 from src.features import build_features
 from src.config import SUBTYPES, MODELS_DIR, PROCESSED_DATA_DIR
